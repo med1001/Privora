@@ -1,2 +1,5 @@
-# ChatApp
-a distributed chat application
+![Logo](assets/logo.png)
+
+
+# Privora
+A distributed chat application
