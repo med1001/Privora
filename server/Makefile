@@ -27,7 +27,5 @@ $(BUILDDIR)/%.o: $(SRCDIR)/%.c $(INCLUDEDIR)/%.h
 clean:
 	rm -rf $(BUILDDIR)
 
-# Rebuild everything
-rebuild: clean all
+.PHONY: all clean
 
-.PHONY: all clean rebuild
