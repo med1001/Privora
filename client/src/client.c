@@ -19,15 +19,19 @@ void *receive_messages(void *arg) {
     ssize_t bytes_received;
 
     while (running) {
+        // Receive messages from the server
         bytes_received = recv(sock, buffer, sizeof(buffer) - 1, 0);
         if (bytes_received > 0) {
             buffer[bytes_received] = '\0';  // Null-terminate the message
             printf("Received: %s\n", buffer);
         } else if (bytes_received == 0) {
-            printf("Server closed the connection.\n");
+            // Server has closed the connection
+            printf("Server disconnected. Exiting.\n");
+            running = 0;
             break;
         } else {
             perror("Error receiving message");
+            running = 0;
             break;
         }
     }
@@ -37,18 +41,22 @@ void *receive_messages(void *arg) {
 
 // Function to send messages to the server
 void send_message() {
-    char message[MAX_MSG_LENGTH];
+    char message[1024];
 
     while (running) {
         printf("Enter message: ");
         fgets(message, sizeof(message), stdin);
-        message[strcspn(message, "\n")] = '\0'; // Remove newline character
+        
+        // Remove newline character from the input
+        message[strcspn(message, "\n")] = '\0';
 
-        // Handle special commands
+        // Check for special commands
         if (strcmp(message, "/exit") == 0) {
             printf("Exiting...\n");
-            running = 0;  // Signal the receiving thread to stop
-            shutdown(sock, SHUT_RDWR); // Properly shut down socket
+
+            // Close the socket before stopping the loop
+            close(sock);
+            running = 0;
             break;
         } else if (strcmp(message, "/help") == 0) {
             printf("Available commands:\n");
@@ -63,14 +71,15 @@ void send_message() {
             continue;
         }
 
-        // Send message
+        // Send the message to the server if it's not a special command
         if (send(sock, message, strlen(message), 0) < 0) {
             perror("Message send failed");
+            running = 0;
             break;
         }
     }
 
-    printf("Client exiting send_message()...\n");
+    printf("Client terminated.\n");
 }
 
 int main() {
@@ -114,10 +123,6 @@ int main() {
 
     // Wait for the receiving thread to finish before terminating the client
     pthread_join(recv_thread, NULL);
-
-    // Close socket after threads are done
-    close(sock);
-    printf("Client fully exited.\n");
 
     return 0;
 }
