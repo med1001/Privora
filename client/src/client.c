@@ -3,9 +3,71 @@
 #include <string.h>
 #include <unistd.h>
 #include <arpa/inet.h>
-#include "../include/client.h"
+#include <pthread.h>
 
-void initialize_client() {
+#define SERVER_IP "127.0.0.1" // Server IP address
+#define SERVER_PORT 8080      // Server port
+#define MAX_MSG_LENGTH 1024   // Maximum message length
+
+int sock; // Global socket descriptor
+
+// Function to receive messages from the server
+void *receive_messages(void *arg) {
+    char buffer[MAX_MSG_LENGTH];
+    ssize_t bytes_received;
+
+    while (1) {
+        // Receive messages from the server
+        bytes_received = recv(sock, buffer, sizeof(buffer) - 1, 0);
+        if (bytes_received > 0) {
+            buffer[bytes_received] = '\0';  // Null-terminate the message
+            printf("Received: %s\n", buffer);
+        } else if (bytes_received == 0) {
+            printf("Server closed the connection.\n");
+            break;
+        } else {
+            perror("Error receiving message");
+            break;
+        }
+    }
+
+    close(sock);
+    pthread_exit(NULL);
+}
+
+// Function to send messages to the server
+void send_message(int sock) {
+    char message[1024];
+
+    while (1) {
+        printf("Enter message: ");
+        fgets(message, sizeof(message), stdin);
+        
+        // Remove newline character from the input
+        message[strcspn(message, "\n")] = '\0';
+
+        // Check if the user wants to exit
+        if (strcmp(message, "exit") == 0) {
+            // Inform the server that the client is exiting (optional)
+            printf("Exiting...\n");
+
+            // Break the loop and close the connection
+            break;
+        }
+
+        // Send the message to the server
+        if (send(sock, message, strlen(message), 0) < 0) {
+            perror("Message send failed");
+            break;
+        }
+    }
+    // Close the socket after exit
+    close(sock);
+    printf("Client terminated.\n");
+}
+
+
+int main() {
     int sock;
     struct sockaddr_in server_address;
 
@@ -35,13 +97,8 @@ void initialize_client() {
 
     printf("Connected to the server successfully.\n");
 
-    // Close the socket
-    close(sock);
-    printf("Client terminated.\n");
-}
+    // Call send_message with the socket
+    send_message(sock);
 
-int main() {
-    printf("Initializing client...\n");
-    initialize_client();
     return 0;
 }
