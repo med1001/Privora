@@ -10,14 +10,15 @@
 #define MAX_MSG_LENGTH 1024   // Maximum message length
 
 int sock; // Global socket descriptor
+pthread_t recv_thread; // Global thread for receiving messages
+int running = 1; // Shared flag to control the running state
 
 // Function to receive messages from the server
 void *receive_messages(void *arg) {
     char buffer[MAX_MSG_LENGTH];
     ssize_t bytes_received;
 
-    while (1) {
-        // Receive messages from the server
+    while (running) {
         bytes_received = recv(sock, buffer, sizeof(buffer) - 1, 0);
         if (bytes_received > 0) {
             buffer[bytes_received] = '\0';  // Null-terminate the message
@@ -31,44 +32,48 @@ void *receive_messages(void *arg) {
         }
     }
 
-    close(sock);
-    pthread_exit(NULL);
+    return NULL;
 }
 
 // Function to send messages to the server
-void send_message(int sock) {
-    char message[1024];
+void send_message() {
+    char message[MAX_MSG_LENGTH];
 
-    while (1) {
+    while (running) {
         printf("Enter message: ");
         fgets(message, sizeof(message), stdin);
-        
-        // Remove newline character from the input
-        message[strcspn(message, "\n")] = '\0';
+        message[strcspn(message, "\n")] = '\0'; // Remove newline character
 
-        // Check if the user wants to exit
-        if (strcmp(message, "exit") == 0) {
-            // Inform the server that the client is exiting (optional)
+        // Handle special commands
+        if (strcmp(message, "/exit") == 0) {
             printf("Exiting...\n");
-
-            // Break the loop and close the connection
+            running = 0;  // Signal the receiving thread to stop
+            shutdown(sock, SHUT_RDWR); // Properly shut down socket
             break;
+        } else if (strcmp(message, "/help") == 0) {
+            printf("Available commands:\n");
+            printf("/exit - Disconnect from the server and exit the client.\n");
+            printf("/help - Display this help message.\n");
+            continue;
         }
 
-        // Send the message to the server
+        // Handle invalid commands
+        if (message[0] == '/') {
+            printf("Invalid command. Type '/help' for a list of valid commands.\n");
+            continue;
+        }
+
+        // Send message
         if (send(sock, message, strlen(message), 0) < 0) {
             perror("Message send failed");
             break;
         }
     }
-    // Close the socket after exit
-    close(sock);
-    printf("Client terminated.\n");
+
+    printf("Client exiting send_message()...\n");
 }
 
-
 int main() {
-    int sock;
     struct sockaddr_in server_address;
 
     // Create socket
@@ -97,8 +102,22 @@ int main() {
 
     printf("Connected to the server successfully.\n");
 
-    // Call send_message with the socket
-    send_message(sock);
+    // Start receiving messages in a separate thread
+    if (pthread_create(&recv_thread, NULL, receive_messages, NULL) != 0) {
+        perror("Error creating receiving thread");
+        close(sock);
+        exit(EXIT_FAILURE);
+    }
+
+    // Call send_message without passing the socket
+    send_message();
+
+    // Wait for the receiving thread to finish before terminating the client
+    pthread_join(recv_thread, NULL);
+
+    // Close socket after threads are done
+    close(sock);
+    printf("Client fully exited.\n");
 
     return 0;
 }
