@@ -7,7 +7,7 @@
 
 #define SERVER_IP "127.0.0.1"
 #define SERVER_PORT 8080
-#define MAX_MSG_LENGTH 1024
+#define MAX_MSG_LENGTH 256  // Updated max message length
 
 int sock;
 pthread_t recv_thread;
@@ -36,18 +36,29 @@ void *receive_messages(void *arg) {
 
 // Function to send messages to the server
 void send_message() {
-    char message[MAX_MSG_LENGTH];
+    char message[MAX_MSG_LENGTH + 2];  // +2 to handle newline and null terminator
 
     while (running) {
         printf("Enter message: ");
         fgets(message, sizeof(message), stdin);
-        message[strcspn(message, "\n")] = '\0';
+        message[strcspn(message, "\n")] = '\0'; // Remove newline
+
+        // Validate input: check for empty messages
+        if (strlen(message) == 0) {
+            printf("Error: Message cannot be empty.\n");
+            continue;
+        }
+
+        // Validate input: check message length
+        if (strlen(message) > MAX_MSG_LENGTH) {
+            printf("Error: Message exceeds %d characters. Please shorten it.\n", MAX_MSG_LENGTH);
+            continue;
+        }
 
         if (strcmp(message, "/exit") == 0) {
             printf("Exiting...\n");
-
-            running = 0;  // Signal the receive thread to stop
-            shutdown(sock, SHUT_RDWR);  // Force close the socket
+            running = 0;
+            shutdown(sock, SHUT_RDWR);
             close(sock);
             break;
         } else if (strcmp(message, "/help") == 0) {
@@ -106,7 +117,6 @@ int main() {
 
     send_message();
 
-    // Ensure the receive thread exits cleanly
     pthread_cancel(recv_thread);
     pthread_join(recv_thread, NULL);
 
