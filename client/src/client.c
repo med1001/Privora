@@ -4,25 +4,37 @@
 #include <unistd.h>
 #include <arpa/inet.h>
 #include <pthread.h>
+#include <time.h>
 
 #define SERVER_IP "127.0.0.1"
 #define SERVER_PORT 8080
-#define MAX_MSG_LENGTH 256  // Updated max message length
+#define MAX_MSG_LENGTH 256
 
 int sock;
 pthread_t recv_thread;
 int running = 1;
 
+// Function to get the current timestamp
+void get_timestamp(char *buffer, size_t size) {
+    time_t raw_time;
+    struct tm *time_info;
+    time(&raw_time);
+    time_info = localtime(&raw_time);
+    strftime(buffer, size, "[%H:%M:%S] ", time_info);  // Ensuring proper formatting with closing bracket
+}
+
 // Function to receive messages from the server
 void *receive_messages(void *arg) {
     char buffer[MAX_MSG_LENGTH];
     ssize_t bytes_received;
+    char timestamp[20];  // Buffer for timestamp
 
     while (running) {
         bytes_received = recv(sock, buffer, sizeof(buffer) - 1, 0);
         if (bytes_received > 0) {
-            buffer[bytes_received] = '\0';
-            printf("\nReceived: %s\nEnter message: ", buffer);
+            buffer[bytes_received] = '\0';  // Ensure null-termination
+            get_timestamp(timestamp, sizeof(timestamp)); // Get current time
+            printf("\n%s Received: %s\nEnter message: ", timestamp, buffer);
             fflush(stdout);
         } else {
             printf("\nServer disconnected. Exiting.\n");
@@ -36,20 +48,18 @@ void *receive_messages(void *arg) {
 
 // Function to send messages to the server
 void send_message() {
-    char message[MAX_MSG_LENGTH + 2];  // +2 to handle newline and null terminator
+    char message[MAX_MSG_LENGTH + 2];
 
     while (running) {
         printf("Enter message: ");
         fgets(message, sizeof(message), stdin);
-        message[strcspn(message, "\n")] = '\0'; // Remove newline
+        message[strcspn(message, "\n")] = '\0';
 
-        // Validate input: check for empty messages
         if (strlen(message) == 0) {
             printf("Error: Message cannot be empty.\n");
             continue;
         }
 
-        // Validate input: check message length
         if (strlen(message) > MAX_MSG_LENGTH) {
             printf("Error: Message exceeds %d characters. Please shorten it.\n", MAX_MSG_LENGTH);
             continue;
