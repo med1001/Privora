@@ -83,7 +83,7 @@ sudo apt install python3 python3-venv python3-pip
 ### **Running the Flask Server**
 Start the authentication server with:
 ```bash
-python app.py
+python auth_server.py
 ```
 By default, Flask runs on `http://127.0.0.1:5000/`.
 
