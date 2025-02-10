@@ -1,0 +1,16 @@
+# Ignore Python virtual environment
+flask_auth/venv/
+
+# Ignore C object files and binaries
+client/**/*.o
+server/**/*.o
+client/build/
+server/build/
+
+# Ignore compiled executables if outside build/
+server/chat_server
+client/chat_client
+
+# Ignore SQLite database files (if used)
+*.sqlite3
+
