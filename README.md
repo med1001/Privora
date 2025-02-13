@@ -65,9 +65,9 @@ Ensure you have **Python 3.8+** installed. If not, install it using:
 sudo apt install python3 python3-venv python3-pip
 ```
 Before building the project, ensure that the libcurl is installed using the following command on Ubuntu-based systems:
-  ```bash
-  sudo apt-get install libcurl4-openssl-dev
-
+```bash
+sudo apt-get install libcurl4-openssl-dev
+```
 ### **Setting Up the Virtual Environment**
 1. Navigate to the `flask_auth/` directory:
    ```bash
