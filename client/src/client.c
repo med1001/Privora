@@ -5,6 +5,7 @@
 #include <arpa/inet.h>
 #include <pthread.h>
 #include <time.h>
+#include "terminal_frontend.h"
 
 #define SERVER_IP "127.0.0.1"
 #define SERVER_PORT 8080
@@ -95,6 +96,10 @@ void send_message() {
 
 int main() {
     struct sockaddr_in server_address;
+    char username[50];
+
+    // Display the login/registration menu before connecting
+    display_menu(username);
 
     if ((sock = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
         perror("Socket creation failed");
