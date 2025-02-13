@@ -1,6 +1,7 @@
 # Variables
 CC = gcc
 CFLAGS = -Wall -g
+LDFLAGS = -lcurl  # Add libcurl for HTTP support
 SRCDIR = src
 BUILDDIR = build
 INCLUDEDIR = include
@@ -16,7 +17,7 @@ all: $(TARGET)
 # Link the final binary
 $(TARGET): $(OBJ)
 	@mkdir -p $(BUILDDIR)
-	$(CC) $(CFLAGS) -o $@ $^
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)  # Include LDFLAGS here
 
 # Compile object files
 $(BUILDDIR)/%.o: $(SRCDIR)/%.c $(INCLUDEDIR)/%.h
