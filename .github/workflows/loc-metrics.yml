@@ -8,13 +8,16 @@ on:
 jobs:
   count-lines:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout Code
         uses: actions/checkout@v3
 
-      - name: Count Lines of Code
-        uses: step-security/hoc@v1
-        id: loc
+      - name: Install cloc
+        run: sudo apt-get update && sudo apt-get install -y cloc
 
-      - name: Display LOC
-        run: echo "Lines of Code: ${{ steps.loc.outputs.lines }}"
+      - name: Count Lines of Code
+        run: |
+          cloc . --quiet --json > loc.json
+          total_lines=$(jq '.SUM.code' loc.json)
+          echo "Total Lines of Code: $total_lines"
