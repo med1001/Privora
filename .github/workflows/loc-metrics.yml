@@ -21,3 +21,17 @@ jobs:
           cloc . --quiet --json > loc.json
           total_lines=$(jq '.SUM.code' loc.json)
           echo "Total Lines of Code: $total_lines"
+          echo $total_lines > loc.txt
+
+      - name: Update README
+        run: |
+          loc=$(cat loc.txt)
+          sed -i "s/lines_of_code-.*-brightgreen/lines_of_code-${loc}-brightgreen/g" README.md
+
+      - name: Commit Updated README
+        run: |
+          git config --global user.name "GitHub Actions Bot"
+          git config --global user.email "actions@github.com"
+          git add README.md
+          git commit -m "Update LOC badge in README to $loc"
+          git push
