@@ -83,6 +83,25 @@ sudo apt-get install libcurl4-openssl-dev
    pip install -r requirements.txt
    ```
 
+---
+
+### **Configuring the `.env` File**
+Before running the Flask authentication server, you need to properly set up the `.env` file. The `.env` file should contain the following environment variables:
+
+```plaintext
+SMTP_SERVER=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USERNAME=your_email@example.com
+SMTP_PASSWORD=your_smtp_password
+FROM_EMAIL=your_email@example.com
+```
+
+- **SMTP Credentials:** These are necessary for sending confirmation emails and password recovery notifications.
+- **Security Note:** Do not push your `.env` file to any public repositories to protect sensitive information. Instead, add it to your `.gitignore` file and share it securely with your team if needed.
+- You can create a `.env.example` file without the sensitive values to demonstrate the expected structure of the `.env` file.
+
+---
+
 ### **Running the Flask Server**
 Start the authentication server with:
 ```bash
@@ -102,9 +121,7 @@ Run this command separately in both `server/` and `client/` directories if neede
 ---
 
 ## **Next Steps**
-- Implement account creation and user management.
 - Add private chat functionality between two users.
-- Integrate the Flask authentication system with the C client.
 
 ---
 
