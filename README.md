@@ -39,6 +39,10 @@ Ensure that you have **GCC** and **Make** installed. If not, install them using:
 ```bash
 sudo apt update && sudo apt install build-essential
 ```
+Before building the project, ensure that the libcurl is installed using the following command on Ubuntu-based systems:
+```bash
+sudo apt-get install libcurl4-openssl-dev
+```
 
 ### **Building the Server & Client**
 1. Navigate to the `server/` directory and compile the server:
@@ -53,9 +57,9 @@ sudo apt update && sudo apt install build-essential
    ```
 
 ### **Running the Chat Application**
-After building, you can run the client and server from the `build/` directory:
+After building, you can run the client and server from the `build/` directory in both client and server:
 ```bash
-cd build
+cd build 
 ./server &  # Start the server in the background
 ./client  # Start the client
 ```
@@ -70,10 +74,7 @@ Ensure you have **Python 3.8+** installed. If not, install it using:
 ```bash
 sudo apt install python3 python3-venv python3-pip
 ```
-Before building the project, ensure that the libcurl is installed using the following command on Ubuntu-based systems:
-```bash
-sudo apt-get install libcurl4-openssl-dev
-```
+
 ### **Setting Up the Virtual Environment**
 1. Navigate to the `flask_auth/` directory:
    ```bash
