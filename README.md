@@ -3,7 +3,7 @@
 # Privora
 A distributed chat application with a C-based client/server and a Python (Flask) authentication system.
 
-![Lines of Code](https://img.shields.io/badge/lines_of_code-660-brightgreen)
+![Lines of Code](https://img.shields.io/badge/lines_of_code-659-brightgreen)
 ![GitHub issues](https://img.shields.io/github/issues/med1001/Privora)
 ![GitHub stars](https://img.shields.io/github/stars/med1001/Privora)
 ![GitHub pull requests](https://img.shields.io/github/issues-pr/med1001/Privora)
@@ -39,6 +39,10 @@ Ensure that you have **GCC** and **Make** installed. If not, install them using:
 ```bash
 sudo apt update && sudo apt install build-essential
 ```
+Before building the project, ensure that the libcurl is installed using the following command on Ubuntu-based systems:
+```bash
+sudo apt-get install libcurl4-openssl-dev
+```
 
 ### **Building the Server & Client**
 1. Navigate to the `server/` directory and compile the server:
@@ -53,9 +57,9 @@ sudo apt update && sudo apt install build-essential
    ```
 
 ### **Running the Chat Application**
-After building, you can run the client and server from the `build/` directory:
+After building, you can run the client and server from the `build/` directory in both client and server:
 ```bash
-cd build
+cd build 
 ./server &  # Start the server in the background
 ./client  # Start the client
 ```
@@ -70,10 +74,7 @@ Ensure you have **Python 3.8+** installed. If not, install it using:
 ```bash
 sudo apt install python3 python3-venv python3-pip
 ```
-Before building the project, ensure that the libcurl is installed using the following command on Ubuntu-based systems:
-```bash
-sudo apt-get install libcurl4-openssl-dev
-```
+
 ### **Setting Up the Virtual Environment**
 1. Navigate to the `flask_auth/` directory:
    ```bash
@@ -81,8 +82,7 @@ sudo apt-get install libcurl4-openssl-dev
    ```
 2. Create and activate a virtual environment:
    ```bash
-   python3 -m venv venv
-   source venv/bin/activate  # On Linux/macOS
+   source venv/bin/activate  
    ```
 3. Install dependencies:
    ```bash
