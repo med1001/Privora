@@ -59,9 +59,9 @@ sudo apt-get install libcurl4-openssl-dev
 ### **Running the Chat Application**
 After building, you can run the client and server from the `build/` directory in both client and server:
 ```bash
-cd build 
+cd build # cd to the server build repo (Privora/server/build)
 ./server &  # Start the server in the background
-./client  # Start the client
+./client  # Start the client # after cd to the client build repo (Privora/client/build)
 ```
 
 ---
