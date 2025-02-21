@@ -117,7 +117,9 @@ def login():
         user = cursor.fetchone()
 
         if user:
+            # Check password if user exists
             if check_password_hash(user[0], password):
+                # Check if email is verified
                 if user[1] == 1:
                     return jsonify({"message": "Login successful", "user": {"username": username}}), 200
                 else:

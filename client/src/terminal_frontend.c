@@ -2,6 +2,13 @@
 #include <stdlib.h>
 #include <string.h>
 #include <curl/curl.h>  // Use libcurl for HTTP requests
+#include <ctype.h>      // For handling password input
+
+// Function to capture server response
+static size_t write_callback(void *buffer, size_t size, size_t nmemb, void *userp) {
+    strcat((char *)userp, (char *)buffer);  // Append response to user buffer
+    return size * nmemb;
+}
 
 // Function to register a new user
 void register_user() {
@@ -46,8 +53,17 @@ int login_user(char *username) {
     char password[50];
     printf("Enter username: ");
     scanf("%s", username);
+
+    // Masquer la saisie du mot de passe
     printf("Enter password: ");
-    scanf("%s", password);
+    char ch;
+    int i = 0;
+    while ((ch = getchar()) != '\n' && ch != EOF); // Clear the buffer
+    while ((ch = getchar()) != '\n' && ch != EOF) {
+        password[i++] = ch;
+        putchar('*');  // Affiche un astérisque pour chaque caractère du mot de passe
+    }
+    password[i] = '\0';
 
     // Construct JSON payload
     char data[128];
@@ -57,6 +73,7 @@ int login_user(char *username) {
     // Send POST request to Flask authentication server
     CURL *curl = curl_easy_init();
     int login_successful = 0;
+    char response[1024] = "";  // Buffer to store server response
 
     if (curl) {
         struct curl_slist *headers = NULL;
@@ -65,13 +82,22 @@ int login_user(char *username) {
         curl_easy_setopt(curl, CURLOPT_URL, "http://127.0.0.1:5000/login");
         curl_easy_setopt(curl, CURLOPT_POSTFIELDS, data);
         curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+        curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
+        curl_easy_setopt(curl, CURLOPT_WRITEDATA, response);
 
         CURLcode res = curl_easy_perform(curl);
         if (res == CURLE_OK) {
-            printf("\nLogin successful!\n");
-            login_successful = 1;
+            // Check server response
+            if (strstr(response, "\"error\": \"Email not verified\"")) {
+                printf("Login failed: Email not verified. Please check your inbox.\n");
+            } else if (strstr(response, "\"error\": \"Invalid credentials\"")) {
+                printf("Login failed: Invalid username or password.\n");
+            } else {
+                printf("Login successful!\n");
+                login_successful = 1;
+            }
         } else {
-            fprintf(stderr, "\nLogin failed: %s\n", curl_easy_strerror(res));
+            fprintf(stderr, "Login failed: %s\n", curl_easy_strerror(res));
         }
 
         curl_easy_cleanup(curl);
