@@ -93,19 +93,43 @@ sudo apt install python3 python3-venv python3-pip
 ---
 
 ### **Configuring the `.env` File**
-Before running the Flask authentication server, you need to properly set up the `.env` file. The `.env` file should contain the following environment variables:
+Before running the Flask authentication server, you need to properly set up the `.env` file. This file contains important environment variables required for the application to work, such as SMTP credentials for sending confirmation emails.
 
-```plaintext
-SMTP_SERVER=smtp.gmail.com
-SMTP_PORT=587
-SMTP_USERNAME=your_email@example.com
-SMTP_PASSWORD=your_smtp_password
-FROM_EMAIL=your_email@example.com
-```
+#### Steps:
 
-- **SMTP Credentials:** These are necessary for sending confirmation emails and password recovery notifications.
-- **Security Note:** Do not push your `.env` file to any public repositories to protect sensitive information. Instead, add it to your `.gitignore` file and share it securely with your team if needed.
-- You can create a `.env.example` file without the sensitive values to demonstrate the expected structure of the `.env` file.
+1. **Locate the `.env.example` File:**
+   In the `Privora/flask_auth` directory, there is a hidden file named `.env.example`. This file contains an example structure for the `.env` file, but without sensitive values.
+
+2. **Create the `.env` File:**
+   Copy `.env.example` to create your actual `.env` file:
+   ```bash
+   cp .env.example .env
+   ```
+
+3. **Edit the `.env` File:**
+   Open the `.env` file and replace the placeholder values with your actual SMTP credentials. The required environment variables are:
+
+   ```plaintext
+   SMTP_SERVER=smtp.gmail.com
+   SMTP_PORT=587
+   SMTP_USERNAME=your_email@example.com
+   SMTP_PASSWORD=your_smtp_password
+   FROM_EMAIL=your_email@example.com
+   ```
+
+   - **SMTP_SERVER:** The address of your SMTP server (e.g., `smtp.gmail.com` for Gmail).
+   - **SMTP_PORT:** The port to use for the SMTP connection (e.g., `587` for Gmail).
+   - **SMTP_USERNAME:** Your email address used to send emails.
+   - **SMTP_PASSWORD:** Your SMTP password (or App Password if using Gmail with two-factor authentication).
+   - **FROM_EMAIL:** The email address to appear as the sender for confirmation and recovery emails.
+
+4. **Security Note:**
+   - **Do not** push the `.env` file to public repositories to protect sensitive information like your SMTP credentials. 
+   - Make sure that the `.env` file is added to your `.gitignore` file to prevent accidental commits:
+     ```bash
+     .env
+     ```
+
 
 ---
 
