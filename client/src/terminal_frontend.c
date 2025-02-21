@@ -26,6 +26,9 @@ void register_user() {
              "{\"username\": \"%s\", \"email\": \"%s\", \"password\": \"%s\"}",
              username, email, password);
 
+    // Buffer to store the response
+    char response[1024] = "";  
+
     // Send POST request to Flask authentication server
     CURL *curl = curl_easy_init();
     if (curl) {
@@ -35,10 +38,17 @@ void register_user() {
         curl_easy_setopt(curl, CURLOPT_URL, "http://127.0.0.1:5000/register");
         curl_easy_setopt(curl, CURLOPT_POSTFIELDS, data);
         curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+        curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
+        curl_easy_setopt(curl, CURLOPT_WRITEDATA, response);
 
         CURLcode res = curl_easy_perform(curl);
         if (res == CURLE_OK) {
-            printf("\nRegistration request sent successfully!\n");
+            // Ensure response is not empty before checking for "error"
+            if (strlen(response) > 0 && strstr(response, "\"error\"")) {
+                printf("\nRegistration failed: %s\n", response);
+            } else {
+                printf("\nRegistration request sent successfully!\n");
+            }
         } else {
             fprintf(stderr, "\nFailed to send request: %s\n", curl_easy_strerror(res));
         }
