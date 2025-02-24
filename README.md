@@ -3,7 +3,7 @@
 # Privora
 A distributed chat application with a C-based client/server and a Python (Flask) authentication system.
 
-![Lines of Code](https://img.shields.io/badge/lines_of_code-707-brightgreen)
+![Lines of Code](https://img.shields.io/badge/lines_of_code-711-brightgreen)
 ![GitHub issues](https://img.shields.io/github/issues/med1001/Privora)
 ![GitHub stars](https://img.shields.io/github/stars/med1001/Privora)
 ![GitHub pull requests](https://img.shields.io/github/issues-pr/med1001/Privora)
