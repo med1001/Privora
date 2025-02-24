@@ -126,7 +126,13 @@ void display_menu(char *username) {
         printf("2. Login\n");
         printf("3. Exit\n");
         printf("Enter your choice: ");
-        scanf("%d", &choice);
+
+        // Validate input
+        if (scanf("%d", &choice) != 1) {
+            printf("Invalid input. Please enter a number.\n");
+            while (getchar() != '\n'); // Clear input buffer
+            continue;  // Restart loop
+        }
 
         switch (choice) {
             case 1:
@@ -145,5 +151,6 @@ void display_menu(char *username) {
                 printf("Invalid choice. Try again.\n");
                 break;
         }
-    } while (choice != 3);
+    } while (1);
 }
+
