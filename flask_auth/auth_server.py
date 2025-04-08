@@ -1,5 +1,7 @@
 from flask import Flask, request, jsonify
 import sqlite3
+import jwt
+import datetime
 from werkzeug.security import generate_password_hash, check_password_hash
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -8,11 +10,19 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 import os
 from dotenv import load_dotenv
-
-# Load environment variables from .env file
-load_dotenv()
+from functools import wraps
+from flask_cors import CORS
 
 app = Flask(__name__)
+
+# Load environment variables
+load_dotenv()
+
+# CORS Configuration
+ALLOWED_ORIGIN = os.getenv("ALLOWED_ORIGIN", "http://localhost:3000")
+CORS(app, resources={r"/*": {"origins": [ALLOWED_ORIGIN], "supports_credentials": True}})
+
+app.config['SECRET_KEY'] = os.getenv("SECRET_KEY", "your_default_secret")
 
 # Database setup
 DB_FILE = "users.db"
@@ -20,20 +30,36 @@ DB_FILE = "users.db"
 def init_db():
     with sqlite3.connect(DB_FILE) as conn:
         cursor = conn.cursor()
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS users (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                username TEXT UNIQUE,
-                email TEXT UNIQUE,
-                password TEXT,
-                verified INTEGER DEFAULT 0,
-                verification_token TEXT,
-                expiration_time TEXT
-            )
-        ''')
+        cursor.execute('''CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT UNIQUE,
+            email TEXT UNIQUE,
+            password TEXT,
+            verified INTEGER DEFAULT 0,
+            verification_token TEXT,
+            expiration_time TEXT
+        )''')
         conn.commit()
 
 init_db()
+
+# JWT Token Required Decorator
+def token_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        token = request.headers.get('Authorization')
+        if not token:
+            return jsonify({'error': 'Token is missing!'}), 401
+        try:
+            token = token.replace("Bearer ", "")  # Remove "Bearer " prefix if present
+            data = jwt.decode(token, app.config['SECRET_KEY'], algorithms=["HS256"])
+            request.user = data['username']
+        except jwt.ExpiredSignatureError:
+            return jsonify({'error': 'Token expired!'}), 401
+        except jwt.InvalidTokenError:
+            return jsonify({'error': 'Invalid token!'}), 401
+        return f(*args, **kwargs)
+    return decorated
 
 # Email Configuration
 SMTP_SERVER = os.getenv("SMTP_SERVER")
@@ -44,18 +70,14 @@ FROM_EMAIL = os.getenv("FROM_EMAIL")
 
 def send_verification_email(email, token):
     try:
-        # Create email content
         subject = "Verify Your Email"
         body = f"Click the link to verify your email: http://127.0.0.1:5000/verify/{token}"
-
-        # Create the email message
         msg = MIMEMultipart()
         msg['From'] = FROM_EMAIL
         msg['To'] = email
         msg['Subject'] = subject
         msg.attach(MIMEText(body, 'plain', 'utf-8'))
 
-        # Send the email via SMTP
         with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
             server.starttls()
             server.login(SMTP_USERNAME, SMTP_PASSWORD)
@@ -70,7 +92,6 @@ def send_verification_email(email, token):
 def register():
     data = request.json
     username, email, password = data['username'], data['email'], data['password']
-
     hashed_password = generate_password_hash(password)
     verification_token = str(uuid.uuid4())
     expiration_time = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
@@ -105,7 +126,7 @@ def verify_email(token):
         conn.commit()
         return jsonify({"message": "Email verified! You can now log in."}), 200
 
-# Login Route
+# Login Route with JWT
 @app.route('/login', methods=['POST'])
 def login():
     data = request.json
@@ -116,18 +137,35 @@ def login():
         cursor.execute("SELECT password, verified FROM users WHERE username = ?", (username,))
         user = cursor.fetchone()
 
-        if user:
-            # Check password if user exists
-            if check_password_hash(user[0], password):
-                # Check if email is verified
-                if user[1] == 1:
-                    return jsonify({"message": "Login successful", "user": {"username": username}}), 200
-                else:
-                    return jsonify({"error": "Email not verified"}), 403
+        if user and check_password_hash(user[0], password):
+            if user[1] == 1:
+                token = jwt.encode({'username': username, 'exp': datetime.utcnow() + timedelta(hours=2)},
+                                   app.config['SECRET_KEY'], algorithm="HS256")
+                return jsonify({"message": "Login successful", "token": token}), 200
             else:
-                return jsonify({"error": "Invalid credentials"}), 401
-        else:
-            return jsonify({"error": "User not found"}), 404
+                return jsonify({"error": "Email not verified"}), 403
+        return jsonify({"error": "Invalid credentials"}), 401
+
+# ✅ New: Search Users Route
+@app.route("/search-users", methods=["GET"])
+@token_required
+def search_users():
+    query = request.args.get("q", "").strip().lower()
+    if not query:
+        return jsonify([])  # Return empty list if no query
+
+    with sqlite3.connect(DB_FILE) as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT username FROM users WHERE LOWER(username) LIKE ? AND verified = 1", (f"%{query}%",))
+        users = [row[0] for row in cursor.fetchall()]
+    
+    return jsonify(users)
+
+# Secure WebSocket Test Route
+@app.route('/ws_test', methods=['GET'])
+@token_required
+def websocket_test():
+    return jsonify({"message": "WebSocket connection secured!", "user": request.user}), 200
 
 if __name__ == "__main__":
     app.run(debug=True)
