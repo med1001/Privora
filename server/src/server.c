@@ -4,10 +4,11 @@
 #include <pthread.h>
 #include <libwebsockets.h>
 #include <cjson/cJSON.h>
-#include "storage.h" // For offline message storage
+#include "storage.h" // For offline message storage and discussions
 
 #define MAX_CLIENTS 100
 #define MAX_USERNAME_LEN 32
+#define MAX_MESSAGE_HISTORY 100 // Limit to 100 recent messages per user
 
 // Client structure to hold connection data
 typedef struct {
@@ -89,6 +90,9 @@ void send_private_message(const char *recipient, const char *message, struct lws
 
         lws_write(clients[recipient_index].wsi, &buf[LWS_PRE], msg_len, LWS_WRITE_TEXT);
         printf("[INFO] Private message sent to %s\n", recipient);
+        
+        // Store message in database with timestamp
+        store_message_history(sender_name, recipient, message);
     } else {
         // Recipient is offline
         printf("[INFO] Storing offline message for %s\n", recipient);
@@ -96,6 +100,95 @@ void send_private_message(const char *recipient, const char *message, struct lws
     }
 
     pthread_mutex_unlock(&clients_mutex);
+}
+
+// // Function to deliver offline messages after login
+// void deliver_offline_messages(const char *username, struct lws *wsi) {
+//     char messages[1024];
+//     if (fetch_offline_messages(username, messages, sizeof(messages)) > 0) {
+//         // Send offline messages back to the user
+//         unsigned char buf[LWS_PRE + 1024];
+//         size_t msg_len = strlen(messages);
+//         memcpy(&buf[LWS_PRE], messages, msg_len);
+//         lws_write(wsi, &buf[LWS_PRE], msg_len, LWS_WRITE_TEXT);
+//         printf("[INFO] Delivered offline messages to %s\n", username);
+//     }
+// }
+
+// Function to fetch recent conversations
+void fetch_recent_conversations(const char *username, struct lws *wsi) {
+    int count = 0;
+    char **contacts = get_recent_contacts(username, &count);
+
+    if (contacts != NULL && count > 0) {
+        char response[1024];
+        snprintf(response, sizeof(response), "{\"contacts\":[");
+        for (int i = 0; i < count; i++) {
+            if (i > 0) strncat(response, ",", sizeof(response) - strlen(response) - 1);
+            strncat(response, "\"", sizeof(response) - strlen(response) - 1);
+            strncat(response, contacts[i], sizeof(response) - strlen(response) - 1);
+            strncat(response, "\"", sizeof(response) - strlen(response) - 1);
+        }
+        strncat(response, "]}", sizeof(response) - strlen(response) - 1);
+
+        unsigned char buf[LWS_PRE + 1024];
+        size_t msg_len = strlen(response);
+        memcpy(&buf[LWS_PRE], response, msg_len);
+        lws_write(wsi, &buf[LWS_PRE], msg_len, LWS_WRITE_TEXT);
+
+        printf("[INFO] Sent recent contacts for %s\n", username);
+    }
+}
+
+// Function to fetch message history for a specific user
+void fetch_message_history(const char *username, struct lws *wsi) {
+    // Retrieve last N messages for this user
+    const char *query = "SELECT sender, recipient, message, timestamp FROM message_history "
+                        "WHERE sender = ? OR recipient = ? "
+                        "ORDER BY timestamp DESC LIMIT 20;";
+
+    sqlite3_stmt *stmt;
+    char response[2048] = "{\"history\":[";  // Initialize the JSON response string
+    int message_count = 0;
+
+    if (sqlite3_prepare_v2(db, query, -1, &stmt, NULL) != SQLITE_OK) {
+        fprintf(stderr, "[ERROR] Error fetching message history: %s\n", sqlite3_errmsg(db));
+        return;
+    }
+
+    sqlite3_bind_text(stmt, 1, username, -1, SQLITE_STATIC);
+    sqlite3_bind_text(stmt, 2, username, -1, SQLITE_STATIC);
+
+    while (sqlite3_step(stmt) == SQLITE_ROW && message_count < MAX_MESSAGE_HISTORY) {
+        const char *sender = (const char *)sqlite3_column_text(stmt, 0);
+        const char *recipient = (const char *)sqlite3_column_text(stmt, 1);
+        const char *message = (const char *)sqlite3_column_text(stmt, 2);
+        const char *timestamp = (const char *)sqlite3_column_text(stmt, 3);
+
+        char message_entry[512];
+        snprintf(message_entry, sizeof(message_entry), "{\"sender\":\"%s\",\"recipient\":\"%s\",\"message\":\"%s\",\"timestamp\":\"%s\"}",
+                 sender, recipient, message, timestamp);
+
+        if (message_count > 0) {
+            strncat(response, ",", sizeof(response) - strlen(response) - 1);  // Separate messages with commas
+        }
+
+        strncat(response, message_entry, sizeof(response) - strlen(response) - 1);
+        message_count++;
+    }
+
+    strncat(response, "]}", sizeof(response) - strlen(response) - 1);  // Close the JSON array
+
+    sqlite3_finalize(stmt);
+
+    if (message_count > 0) {
+        // Send message history back to the user
+        unsigned char buf[LWS_PRE + 2048];
+        size_t msg_len = strlen(response);
+        memcpy(&buf[LWS_PRE], response, msg_len);
+        lws_write(wsi, &buf[LWS_PRE], msg_len, LWS_WRITE_TEXT);
+        printf("[INFO] Sent message history to %s\n", username);
+    }
 }
 
 // WebSocket callback function to handle incoming messages
@@ -128,6 +221,12 @@ static int callback_chat(struct lws *wsi, enum lws_callback_reasons reason, void
                     // ✅ Deliver offline messages only after login is complete
                     printf("[INFO] Checking offline messages for user: %s\n", username->valuestring);
                     deliver_offline_messages(username->valuestring, wsi);
+
+                    // Fetch and send recent conversations
+                    fetch_recent_conversations(username->valuestring, wsi);
+
+                    // Fetch and send message history for the logged-in user
+                    fetch_message_history(username->valuestring, wsi);
                 }
             } else if (type && strcmp(type->valuestring, "message") == 0) {
                 // Handle message
@@ -167,27 +266,25 @@ static struct lws_protocols protocols[] = {
     { NULL, NULL, 0, 0 } // terminator
 };
 
-// Main function to initialize the WebSocket server
-int main(void) {
-    struct lws_context_creation_info info;
-    struct lws_context *context;
-
+int main(int argc, char **argv) {
+    // Initialize database
     init_database();
-    
+
+    // WebSocket context creation
+    struct lws_context_creation_info info;
     memset(&info, 0, sizeof(info));
-    info.port = 9000;
+    info.port = 8080;
     info.protocols = protocols;
 
-    context = lws_create_context(&info);
+    struct lws_context *context = lws_create_context(&info);
     if (context == NULL) {
-        fprintf(stderr, "lws_create_context failed\n");
+        printf("Error creating WebSocket context\n");
         return -1;
     }
 
-    printf("Server started on port 9000\n");
-
+    // Server loop
     while (1) {
-        lws_service(context, 1000);
+        lws_service(context, 100);
     }
 
     lws_context_destroy(context);
