@@ -6,11 +6,16 @@
 
 extern sqlite3 *db;
 
+typedef struct {
+    char sender[64];
+    char message[512];
+} OfflineMessage;
+
 // Initialize the database
 void init_database();
 
 // Store offline message
-void store_offline_message(const char *recipient, const char *message);
+void store_offline_message(const char *sender, const char *recipient, const char *message);
 
 // Deliver offline messages and delete after sending
 void deliver_offline_messages(const char *username, struct lws *wsi);
@@ -22,6 +27,6 @@ void store_message_history(const char *sender, const char *recipient, const char
 char **get_recent_contacts(const char *username, int *count);
 
 // In storage.h, declare the function prototype
-int fetch_offline_messages(const char *username, char messages[10][512], int max_messages);
+int fetch_offline_messages(const char *username, OfflineMessage messages[10], int max_messages);
 
 #endif

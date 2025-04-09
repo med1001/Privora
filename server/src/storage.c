@@ -15,6 +15,7 @@ void init_database() {
     const char *offline_query =
         "CREATE TABLE IF NOT EXISTS offline_messages ("
         "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+        "sender TEXT NOT NULL, "
         "recipient TEXT NOT NULL, "
         "message TEXT NOT NULL);";
 
@@ -34,9 +35,8 @@ void init_database() {
 
     printf("[INFO] Base de données initialisée avec succès.\n");
 }
-
-void store_offline_message(const char *recipient, const char *message) {
-    const char *insert_query = "INSERT INTO offline_messages (recipient, message) VALUES (?, ?);";
+void store_offline_message(const char *sender, const char *recipient, const char *message) {
+    const char *insert_query = "INSERT INTO offline_messages (sender, recipient, message) VALUES (?, ?, ?);";
     sqlite3_stmt *stmt;
 
     if (sqlite3_prepare_v2(db, insert_query, -1, &stmt, NULL) != SQLITE_OK) {
@@ -44,8 +44,9 @@ void store_offline_message(const char *recipient, const char *message) {
         return;
     }
 
-    sqlite3_bind_text(stmt, 1, recipient, -1, SQLITE_STATIC);
-    sqlite3_bind_text(stmt, 2, message, -1, SQLITE_STATIC);
+    sqlite3_bind_text(stmt, 1, sender, -1, SQLITE_STATIC);
+    sqlite3_bind_text(stmt, 2, recipient, -1, SQLITE_STATIC);
+    sqlite3_bind_text(stmt, 3, message, -1, SQLITE_STATIC);
 
     if (sqlite3_step(stmt) != SQLITE_DONE) {
         fprintf(stderr, "[ERROR] Insertion message échouée: %s\n", sqlite3_errmsg(db));
@@ -57,8 +58,8 @@ void store_offline_message(const char *recipient, const char *message) {
 }
 
 // Fetch offline messages from the database
-int fetch_offline_messages(const char *username, char messages[10][512], int max_messages) {
-    const char *select_query = "SELECT message FROM offline_messages WHERE recipient = ?;";
+int fetch_offline_messages(const char *username, OfflineMessage messages[10], int max_messages) {
+    const char *select_query = "SELECT sender, message FROM offline_messages WHERE recipient = ?;";
     sqlite3_stmt *stmt;
     int message_count = 0;
 
@@ -70,8 +71,10 @@ int fetch_offline_messages(const char *username, char messages[10][512], int max
     sqlite3_bind_text(stmt, 1, username, -1, SQLITE_STATIC);
 
     while (sqlite3_step(stmt) == SQLITE_ROW && message_count < max_messages) {
-        const char *message = (const char *)sqlite3_column_text(stmt, 0);
-        strncpy(messages[message_count], message, 512);
+        const char *sender = (const char *)sqlite3_column_text(stmt, 0);
+        const char *message = (const char *)sqlite3_column_text(stmt, 1);
+        strncpy(messages[message_count].sender, sender, sizeof(messages[message_count].sender) - 1);
+        strncpy(messages[message_count].message, message, sizeof(messages[message_count].message) - 1);
         message_count++;
     }
 
@@ -79,22 +82,27 @@ int fetch_offline_messages(const char *username, char messages[10][512], int max
     return message_count;
 }
 
+
 // Deliver offline messages to the client
 void deliver_offline_messages(const char *username, struct lws *wsi) {
-    char messages[10][512]; // Store up to 10 offline messages
+    OfflineMessage messages[10]; // max 10
     int message_count = fetch_offline_messages(username, messages, 10);
 
     for (int i = 0; i < message_count; i++) {
+        char json_msg[1024];
+        snprintf(json_msg, sizeof(json_msg),
+                 "{\"type\":\"offline\",\"from\":\"%s\",\"message\":\"%s\"}",
+                 messages[i].sender, messages[i].message);
+
         unsigned char buf[LWS_PRE + 512];
-        int msg_len = snprintf((char *)(buf + LWS_PRE), 512, "[Offline] %s", messages[i]);
-        if (msg_len > 0) {
-            lws_write(wsi, buf + LWS_PRE, msg_len, LWS_WRITE_TEXT);
-        }
+        int msg_len = strlen(json_msg);
+        memcpy(buf + LWS_PRE, json_msg, msg_len);
+
+        lws_write(wsi, buf + LWS_PRE, msg_len, LWS_WRITE_TEXT);
     }
 
-    // Optionally delete the messages after sending them to the user
-    char delete_query[256];
-    snprintf(delete_query, sizeof(delete_query), "DELETE FROM offline_messages WHERE recipient = ?;");
+    // Delete after sending
+    const char *delete_query = "DELETE FROM offline_messages WHERE recipient = ?;";
     sqlite3_stmt *stmt;
     if (sqlite3_prepare_v2(db, delete_query, -1, &stmt, NULL) == SQLITE_OK) {
         sqlite3_bind_text(stmt, 1, username, -1, SQLITE_STATIC);
@@ -102,6 +110,7 @@ void deliver_offline_messages(const char *username, struct lws *wsi) {
         sqlite3_finalize(stmt);
     }
 }
+
 
 void store_message_history(const char *sender, const char *recipient, const char *message) {
     const char *insert_query =

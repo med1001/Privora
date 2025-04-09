@@ -76,10 +76,13 @@ void send_private_message(const char *recipient, const char *message, struct lws
     pthread_mutex_lock(&clients_mutex);
 
     int recipient_index = find_client_by_username(recipient);
+
+    int sender_index = find_client_index(sender_wsi);
+    const char *sender_name = sender_index != -1 ? clients[sender_index].username : "unknown";
+
     if (recipient_index != -1) {
         // Send message to the online user
-        int sender_index = find_client_index(sender_wsi);
-        const char *sender_name = sender_index != -1 ? clients[sender_index].username : "unknown";
+        
 
         char response[512];
         snprintf(response, sizeof(response), "{\"from\":\"%s\",\"message\":\"%s\"}", sender_name, message);
@@ -96,7 +99,7 @@ void send_private_message(const char *recipient, const char *message, struct lws
     } else {
         // Recipient is offline
         printf("[INFO] Storing offline message for %s\n", recipient);
-        store_offline_message(recipient, message);
+        store_offline_message(sender_name, recipient, message);
     }
 
     pthread_mutex_unlock(&clients_mutex);
