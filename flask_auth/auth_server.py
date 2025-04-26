@@ -126,18 +126,35 @@ def login():
         cursor.execute("SELECT password, verified FROM users WHERE username = ?", (username,))
         user = cursor.fetchone()
 
-        if user:
-            # Check password if user exists
-            if check_password_hash(user[0], password):
-                # Check if email is verified
-                if user[1] == 1:
-                    return jsonify({"message": "Login successful", "user": {"username": username}}), 200
-                else:
-                    return jsonify({"error": "Email not verified"}), 403
+        if user and check_password_hash(user[0], password):
+            if user[1] == 1:
+                token = jwt.encode({'username': username, 'exp': datetime.utcnow() + timedelta(hours=2)},
+                                   app.config['SECRET_KEY'], algorithm="HS256")
+                return jsonify({"message": "Login successful", "token": token}), 200
             else:
-                return jsonify({"error": "Invalid credentials"}), 401
-        else:
-            return jsonify({"error": "User not found"}), 404
+                return jsonify({"error": "Email not verified"}), 403
+        return jsonify({"error": "Invalid credentials"}), 401
+
+# ✅ New: Search Users Route
+@app.route("/search-users", methods=["GET"])
+@token_required
+def search_users():
+    query = request.args.get("q", "").strip().lower()
+    if not query:
+        return jsonify([])  # Return empty list if no query
+
+    with sqlite3.connect(DB_FILE) as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT username FROM users WHERE LOWER(username) LIKE ? AND verified = 1", (f"%{query}%",))
+        users = [row[0] for row in cursor.fetchall()]
+    
+    return jsonify(users)
+
+# Secure WebSocket Test Route
+@app.route('/ws_test', methods=['GET'])
+@token_required
+def websocket_test():
+    return jsonify({"message": "WebSocket connection secured!", "user": request.user}), 200
 
 if __name__ == "__main__":
     app.run(debug=True)
