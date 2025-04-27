@@ -30,17 +30,15 @@ DB_FILE = "users.db"
 def init_db():
     with sqlite3.connect(DB_FILE) as conn:
         cursor = conn.cursor()
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS users (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                username TEXT UNIQUE,
-                email TEXT UNIQUE,
-                password TEXT,
-                verified INTEGER DEFAULT 0,
-                verification_token TEXT,
-                expiration_time TEXT
-            )
-        ''')
+        cursor.execute('''CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT UNIQUE,
+            email TEXT UNIQUE,
+            password TEXT,
+            verified INTEGER DEFAULT 0,
+            verification_token TEXT,
+            expiration_time TEXT
+        )''')
         conn.commit()
 
 init_db()
@@ -72,18 +70,14 @@ FROM_EMAIL = os.getenv("FROM_EMAIL")
 
 def send_verification_email(email, token):
     try:
-        # Create email content
         subject = "Verify Your Email"
         body = f"Click the link to verify your email: http://127.0.0.1:5000/verify/{token}"
-
-        # Create the email message
         msg = MIMEMultipart()
         msg['From'] = FROM_EMAIL
         msg['To'] = email
         msg['Subject'] = subject
         msg.attach(MIMEText(body, 'plain', 'utf-8'))
 
-        # Send the email via SMTP
         with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
             server.starttls()
             server.login(SMTP_USERNAME, SMTP_PASSWORD)
@@ -98,7 +92,6 @@ def send_verification_email(email, token):
 def register():
     data = request.json
     username, email, password = data['username'], data['email'], data['password']
-
     hashed_password = generate_password_hash(password)
     verification_token = str(uuid.uuid4())
     expiration_time = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
@@ -133,7 +126,7 @@ def verify_email(token):
         conn.commit()
         return jsonify({"message": "Email verified! You can now log in."}), 200
 
-# Login Route
+# Login Route with JWT
 @app.route('/login', methods=['POST'])
 def login():
     data = request.json
