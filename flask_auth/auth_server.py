@@ -1,5 +1,7 @@
 from flask import Flask, request, jsonify
 import sqlite3
+import jwt
+import datetime
 from werkzeug.security import generate_password_hash, check_password_hash
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -8,11 +10,19 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 import os
 from dotenv import load_dotenv
-
-# Load environment variables from .env file
-load_dotenv()
+from functools import wraps
+from flask_cors import CORS
 
 app = Flask(__name__)
+
+# Load environment variables
+load_dotenv()
+
+# CORS Configuration
+ALLOWED_ORIGIN = os.getenv("ALLOWED_ORIGIN", "http://localhost:3000")
+CORS(app, resources={r"/*": {"origins": [ALLOWED_ORIGIN], "supports_credentials": True}})
+
+app.config['SECRET_KEY'] = os.getenv("SECRET_KEY", "your_default_secret")
 
 # Database setup
 DB_FILE = "users.db"
