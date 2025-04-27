@@ -1,14 +1,15 @@
 # Variables
 CC = gcc
-CFLAGS = -Wall -g
+CFLAGS = -Wall -g -I/usr/include
+LDFLAGS = -lwebsockets -lsqlite3 -lcjson
 SRCDIR = src
 BUILDDIR = build
 INCLUDEDIR = include
 TARGET = $(BUILDDIR)/server
 
-# Collect source files
+# Source files
 SRC = $(wildcard $(SRCDIR)/*.c)
-OBJ = $(SRC:$(SRCDIR)/%.c=$(BUILDDIR)/%.o)
+OBJ = $(patsubst $(SRCDIR)/%.c,$(BUILDDIR)/%.o,$(SRC))
 
 # Default target
 all: $(TARGET)
@@ -16,16 +17,15 @@ all: $(TARGET)
 # Link the final binary
 $(TARGET): $(OBJ)
 	@mkdir -p $(BUILDDIR)
-	$(CC) $(CFLAGS) -o $@ $^
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
 # Compile object files
-$(BUILDDIR)/%.o: $(SRCDIR)/%.c $(INCLUDEDIR)/%.h
+$(BUILDDIR)/%.o: $(SRCDIR)/%.c
 	@mkdir -p $(BUILDDIR)
-	$(CC) $(CFLAGS) -I$(INCLUDEDIR) -c $< -o $@
+	$(CC) $(CFLAGS) -I$(INCLUDEDIR) -I/usr/include -c $< -o $@
 
 # Clean build artifacts
 clean:
 	rm -rf $(BUILDDIR)
 
 .PHONY: all clean
-
