@@ -71,7 +71,7 @@ FROM_EMAIL = os.getenv("FROM_EMAIL")
 def send_verification_email(email, token):
     try:
         subject = "Verify Your Email"
-        body = f"Click the link to verify your email: http://127.0.0.1:5000/verify/{token}"
+        body = f"Click the link to verify your email: http://13.48.55.91:5000/verify/{token}"
         msg = MIMEMultipart()
         msg['From'] = FROM_EMAIL
         msg['To'] = email
