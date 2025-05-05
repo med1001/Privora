@@ -19,7 +19,7 @@ app = Flask(__name__)
 load_dotenv()
 
 # CORS Configuration
-ALLOWED_ORIGIN = os.getenv("ALLOWED_ORIGIN", "http://localhost:3000")
+ALLOWED_ORIGIN = os.getenv("ALLOWED_ORIGIN", "http://13.48.55.91")
 CORS(app, resources={r"/*": {"origins": [ALLOWED_ORIGIN], "supports_credentials": True}})
 
 app.config['SECRET_KEY'] = os.getenv("SECRET_KEY", "your_default_secret")
