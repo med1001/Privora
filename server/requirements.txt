@@ -1,0 +1,5 @@
+fastapi
+uvicorn
+SQLAlchemy
+python-dotenv
+firebase-admin

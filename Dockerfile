@@ -1,36 +1,22 @@
-# Start from lightweight Python image
 FROM python:3.11-slim
 
-# Install necessary system packages
+# Install system dependencies (adjust as needed, kept sqlite3 for SQLAlchemy)
 RUN apt-get update && apt-get install -y \
-    gcc \
-    make \
-    libsqlite3-dev \
-    libwebsockets-dev \
-    libssl-dev \
-    libcjson-dev \
-    sqlite3 \
+    libsqlite3-dev sqlite3 \
     && rm -rf /var/lib/apt/lists/*
 
 # Set working directory
 WORKDIR /app
 
-# Copy only server and flask_auth folders
-COPY server/ ./server/
-COPY flask_auth/ ./flask_auth/
-
-# Build the C server
-WORKDIR /app/server
-RUN make
-
-# Install Python dependencies from requirements.txt
-WORKDIR /app/flask_auth
+# Copy requirements and install Python dependencies
+COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Expose Flask API port
-EXPOSE 5000    
-# Expose WebSocket server port
-EXPOSE 8080   
+# Copy the FastAPI application code
+COPY src/ ./src/
 
-# Command to run both servers
-CMD ["bash", "-c", "/app/server/build/server & python /app/flask_auth/auth_server.py"]
+# Expose FastAPI port
+EXPOSE 8080
+
+# Run FastAPI with uvicorn
+CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8080"]
