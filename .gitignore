@@ -1,16 +1,49 @@
-# Ignore Python virtual environment
-flask_auth/venv/
-
-# Ignore C object files and binaries
-client/**/*.o
-server/**/*.o
-client/build/
-server/build/
-
-# Ignore compiled executables if outside build/
-server/chat_server
-client/chat_client
-
-# Ignore SQLite database files (if used)
+# --- Python ---
+venv/
+__pycache__/
+*.py[cod]
+*.pyo
 *.sqlite3
+*.db
+*.log
+*.swp
+
+# --- Flask (legacy) ---
+flask_auth/venv/  # Can be removed if Flask is no longer used
+gunicorn.log
+
+# --- Firebase Secrets ---
+.env
+.env.*.local
+server/secrets/firebase-adminsdk.json
+server/src/firebase_credentials.json
+
+# --- Frontend (Node / TypeScript) ---
+node_modules/
+dist/
+build/
+*.tsbuildinfo
+
+# --- Firebase Frontend Config ---
+src/firebase-config.ts         # Real config, should not be committed
+!src/firebase-config.example.ts  # Keep example for reference
+
+# --- Docker ---
+docker-compose.override.yml
+*.tar
+
+# --- Editors / OS ---
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# --- Tests ---
+.pytest_cache/
+.coverage
+htmlcov/
+
+# --- Tailwind ---
+.tailwind-cache
+
 
