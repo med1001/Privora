@@ -1,6 +1,6 @@
 # handlers/message.py
-from db import get_db
-from models import Message, OfflineMessage
+from src.db import get_db
+from src.models import Message, OfflineMessage
 import json
 import traceback
 

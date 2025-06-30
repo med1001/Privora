@@ -1,6 +1,6 @@
 FROM python:3.11-slim
 
-# Install system dependencies (adjust as needed, kept sqlite3 for SQLAlchemy)
+# Install system dependencies
 RUN apt-get update && apt-get install -y \
     libsqlite3-dev sqlite3 \
     && rm -rf /var/lib/apt/lists/*
@@ -8,15 +8,16 @@ RUN apt-get update && apt-get install -y \
 # Set working directory
 WORKDIR /app
 
-# Copy requirements and install Python dependencies
-COPY requirements.txt .
+# Copy requirements and install dependencies
+COPY server/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the FastAPI application code
-COPY src/ ./src/
+# Copy application source code
+COPY server/src/ ./src/
+COPY server/secrets/ ./secrets/
 
 # Expose FastAPI port
-EXPOSE 8080
+EXPOSE 8000
 
-# Run FastAPI with uvicorn
-CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8080"]
+# ✅ Run as a Python package using `-m`, **calling python explicitly**
+CMD ["python", "-m", "uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000"]

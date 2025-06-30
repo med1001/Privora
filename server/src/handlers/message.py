@@ -1,5 +1,5 @@
-from db import get_db
-from models import Message, OfflineMessage
+from src.db import get_db
+from src.models import Message, OfflineMessage
 import json
 import traceback
 
@@ -29,7 +29,7 @@ async def handle_incoming_message(sender_email, websocket, data):
 
         # ✅ Deliver to online recipient if possible
         try:
-            from main import active_connections
+            from src.main import active_connections
             if recipient_email in active_connections:
                 await active_connections[recipient_email].send_text(json.dumps({
                     "type": "message",

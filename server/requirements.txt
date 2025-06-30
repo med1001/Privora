@@ -1,5 +1,5 @@
 fastapi
-uvicorn
+uvicorn[standard]
 SQLAlchemy
 python-dotenv
 firebase-admin
