@@ -8,9 +8,9 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends, Header, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from firebase_admin import auth as firebase_auth, credentials, initialize_app
-from db import engine
-from models import Base
-from handlers.message import handle_incoming_message
+from src.db import engine
+from src.models import Base
+from src.handlers.message import handle_incoming_message
 
 # ---------- Load environment ----------
 load_dotenv()
@@ -24,7 +24,7 @@ cred = credentials.Certificate(cred_path)
 initialize_app(cred)
 
 # ---------- Database Initialization ----------
-Base.metadata.drop_all(bind=engine)  # Remove this in production!
+#Base.metadata.drop_all(bind=engine)  # Remove this in production!
 Base.metadata.create_all(bind=engine)
 
 # ---------- FastAPI App ----------
@@ -86,6 +86,7 @@ def websocket_test(user_email: str = Depends(get_current_user)):
     }
 
 @app.websocket("/ws")
+@app.websocket("/ws/")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
     print("[WS] Connection opened")
