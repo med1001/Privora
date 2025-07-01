@@ -1,158 +1,260 @@
 ![Logo](assets/logo.png)
 
-# Privora
-A distributed chat application with a C-based client/server and a Python (Flask) authentication system.
+#  Privora
 
-![Lines of Code](https://img.shields.io/badge/lines_of_code-528-brightgreen)
+**Privora** is a real-time chat backend powered by FastAPI, Firebase Authentication, and WebSockets. It includes secure token-based login, message persistence (with offline delivery), and a Dockerized setup for easy development and deployment.
+
+![Lines of Code](https://img.shields.io/badge/lines_of_code-529-brightgreen)
 ![GitHub issues](https://img.shields.io/github/issues/med1001/Privora)
 ![GitHub stars](https://img.shields.io/github/stars/med1001/Privora)
 ![GitHub pull requests](https://img.shields.io/github/issues-pr/med1001/Privora)
 ![GitHub license](https://img.shields.io/github/license/med1001/Privora)
 
-## **Directory Structure**
-- `client/` - C client code.
-- `server/` - C server code.
-- `flask_auth/` - Flask authentication system for user management.
-- `include/` - Header files for the C application.
-- `build/` - Compiled binaries.
-- `logs/` - Log files (optional).
-- `assets/` - Project assets (e.g., images, logos).
-- `.gitignore` - Specifies files and directories to ignore in Git.
-- `README.md` - This file.
+---
+
+##  Features
+
+-  Firebase Authentication (JWT)
+-  WebSocket-based real-time chat
+-  Offline message queuing & delivery
+-  User directory search via Firebase
+-  SQLite (default) or PostgreSQL via SQLAlchemy
+-  Docker-based deployment
 
 ---
 
-## **How to Clone the Project**
+##  Project Structure
 
-Run the following command to clone the repository:
-```bash
-git clone https://github.com/med1001/Privora.git
-cd Privora
+```
+Privora/
+├── assets/                        # (Optional/static frontend assets)
+├── server/
+│   ├── .env                       # Environment variables
+│   ├── Dockerfile                 # Docker build config
+│   ├── requirements.txt           # Python dependencies
+│   ├── roadmap.md                 # Planning notes
+│   ├── src/
+│   │   ├── __init__.py
+│   │   ├── auth.py                # Firebase token verification
+│   │   ├── db.py                  # SQLAlchemy session config
+│   │   ├── main.py                # FastAPI app & WebSocket logic
+│   │   ├── models.py              # ORM Models: Message, OfflineMessage
+│   │   ├── firebase_credentials.json          # Firebase Admin credentials
+│   │   ├── firebase_credentials.example.json  # Sample credentials file
+│   │   └── handlers/
+│   │       ├── __init__.py
+│   │       └── message.py         # WebSocket message handling logic
+│   └── secrets/                   # (Reserved for future secrets/keys)
+├── .dockerignore
+├── .gitignore
+└── README.md                      # You are here
 ```
 
 ---
 
-## **How to Build and Run the C Chat Application**
+##  Environment Setup
 
-### **Prerequisites**
-Ensure that you have **GCC** and **Make** installed. If not, install them using:
-```bash
-sudo apt update && sudo apt install build-essential
-```
-Before building the project, ensure that the libcurl is installed using the following command on Ubuntu-based systems:
-```bash
-sudo apt-get install libcurl4-openssl-dev
-```
+Create a `.env` file in `server/`:
 
-### **Building the Server & Client**
-1. Navigate to the `server/` directory and compile the server:
-   ```bash
-   cd server
-   make  # Builds the server
-   ```
-2. Navigate to the `client/` directory and compile the client:
-   ```bash
-   cd ../client
-   make  # Builds the client
-   ```
-
-### **Running the Chat Application**
-After building, you can run the client and server from the `build/` directory in both client and server:
-```bash
-cd build # cd to the server build repo (Privora/server/build)
-./server &  # Start the server in the background
-./client  # Start the client # after cd to the client build repo (Privora/client/build)
+```env
+FIREBASE_ADMIN_CREDENTIALS_JSON=./src/firebase_credentials.json
+ALLOWED_ORIGIN=http://localhost:3000
 ```
 
 ---
 
-## **Setting Up Flask Authentication**
-The Flask authentication system handles user account creation and private messaging authentication.
+##  Docker Usage
 
-### **Prerequisites**
-Ensure you have **Python 3.8+** installed. If not, install it using:
+###  Dockerfile Overview
+
+The `Dockerfile` does the following:
+
+- Uses `python:3.11-slim`
+- Installs SQLite tools and headers
+- Copies app source to `/app/src`
+- Runs FastAPI app with Uvicorn
+
+###  Build the Docker Image
+
+From the project root:
+
 ```bash
-sudo apt install python3 python3-venv python3-pip
+docker build -t privora-backend .
 ```
 
-### **Setting Up the Virtual Environment**
-1. Navigate to the `flask_auth/` directory:
-   ```bash
-   cd flask_auth
-   ```
-2. Create and activate a virtual environment:
-   ```bash
-    python3 -m venv venv
-    source venv/bin/activate  
-   ```
-4. Install dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
+###  Run the Container
 
----
-
-### **Configuring the `.env` File**
-Before running the Flask authentication server, you need to properly set up the `.env` file. This file contains important environment variables required for the application to work, such as SMTP credentials for sending confirmation emails.
-
-#### Steps:
-
-1. **Locate the `.env.example` File:**
-   In the `Privora/flask_auth` directory, there is a hidden file named `.env.example`. This file contains an example structure for the `.env` file, but without sensitive values.
-
-2. **Create the `.env` File:**
-   Copy `.env.example` to create your actual `.env` file:
-   ```bash
-   cp .env.example .env
-   ```
-
-3. **Edit the `.env` File:**
-   Open the `.env` file and replace the placeholder values with your actual SMTP credentials. The required environment variables are:
-
-   ```plaintext
-   SMTP_SERVER=smtp.gmail.com
-   SMTP_PORT=587
-   SMTP_USERNAME=your_email@example.com
-   SMTP_PASSWORD=your_smtp_password
-   FROM_EMAIL=your_email@example.com
-   ```
-
-   - **SMTP_SERVER:** The address of your SMTP server (e.g., `smtp.gmail.com` for Gmail).
-   - **SMTP_PORT:** The port to use for the SMTP connection (e.g., `587` for Gmail).
-   - **SMTP_USERNAME:** Your email address used to send emails.
-   - **SMTP_PASSWORD:** Your SMTP password (or App Password if using Gmail with two-factor authentication).
-   - **FROM_EMAIL:** The email address to appear as the sender for confirmation and recovery emails.
-
-4. **Security Note:**
-   - **Do not** push the `.env` file to public repositories to protect sensitive information like your SMTP credentials. 
-   - Make sure that the `.env` file is added to your `.gitignore` file to prevent accidental commits:
-     ```bash
-     .env
-     ```
-
-
----
-
-### **Running the Flask Server**
-Start the authentication server with:
 ```bash
-python auth_server.py
+docker run --env-file ./server/.env privora-backend
 ```
-By default, Flask runs on `http://127.0.0.1:5000/`.
 
----
+This command runs the backend container using environment variables defined in `./server/.env`.
 
-## **How to Clean the C Build**
-To remove compiled binaries and build artifacts, run:
+#### ⚙️ Optional Flags
+
+```
+-v $(pwd)/server:/app    # For development: mount local code into the container
+-p 8000:8000             # For local access without reverse proxy
+--network privora-net    # For multi-container setup (backend, frontend, reverse proxy)
+```
+
+- Use `-v` during **development** to mount your local code. This enables hot-reloading or quick changes without rebuilding.
+- Use `-p` if you're **not using a reverse proxy** and want to access the backend directly at `http://localhost:8000`.
+- Use `--network privora-net` when running the backend alongside **frontend** and **reverse proxy** containers to enable internal communication by container name (e.g., `backend`, `frontend`).
+
+> 🛠️ If using `--network privora-net`, you **must create the network first** (only once):
+
 ```bash
-make clean
+docker network create privora-net
 ```
-Run this command separately in both `server/` and `client/` directories if needed.
+
+> 📌 On **Windows**, replace `$(pwd)` with `%cd%`.
 
 ---
 
-## **Next Steps**
-- Add private chat functionality between two users.
+
+##  Deployment Architecture (Multi-Container with Reverse Proxy)
+
+This project is designed to run as **three coordinated Docker containers** on a shared network:
+
+| Container        | Role                     | Exposed Port  | Internal Hostname  |
+|------------------|--------------------------|-------------- |--------------------|
+| `frontend`       | React/Vite/Static HTML   | -             | `frontend`         |
+| `backend`        | FastAPI WebSocket API    | 8000          | `backend`          |
+| `reverse-proxy`  | NGINX Reverse Proxy      |**80**(for now)| n/a                |
+
+---
+
+###   NGINX Routing Overview
+
+The reverse proxy (`reverse-proxy` container using NGINX) handles all external traffic and routes requests as follows:
+
+| Request Path    | Routed To      | Description                |
+|-----------------|----------------|----------------------------|
+| `/`             | `frontend:80`  | Static frontend app        |
+| `/api/`         | `backend:8000` | FastAPI REST API endpoints |
+| `/ws`           | `backend:8000/ws` | WebSocket connection   |
+
+The NGINX config also includes **WebSocket support**:
+
+```nginx
+proxy_http_version 1.1;
+proxy_set_header Upgrade $http_upgrade;
+proxy_set_header Connection $connection_upgrade;
+```
+This ensures real-time communication via WebSocket works correctly.
+
+---
+
+##  Docker Networking
+
+To allow the containers to communicate by name (e.g., `frontend`, `backend`), they must all be connected to the same custom **Docker bridge network**.
+
+You can create and run them like this:
+
+```bash
+# Create a shared Docker network (once)
+docker network create privora-net
+
+# Start each container with --network
+docker run --network privora-net --name frontend ...
+docker run --network privora-net --name backend ...
+docker run --network privora-net --name reverse-proxy -p 80:80 ...
+```
+
+> This setup allows NGINX to forward requests to `backend:8000` and `frontend:80` without exposing those ports to the host.
+
+For simpler orchestration, consider using `docker-compose.yml`.
+
+---
+
+##  WebSocket API
+
+**Endpoint:** `/ws`
+
+### 1️⃣ Login
+
+```json
+{
+  "type": "login",
+  "token": "<firebase_id_token>"
+}
+```
+
+- Required as the first message
+- Verifies token and registers connection
+- Delivers offline messages if any
+
+### 2️⃣ Send Message
+
+```json
+{
+  "type": "message",
+  "to": "receiver@example.com",
+  "message": "Hi there!"
+}
+```
+
+### 3️⃣ Receive Message (Live)
+
+```json
+{
+  "type": "message",
+  "from": "sender@example.com",
+  "to": "you@example.com",
+  "message": "Hi!"
+}
+```
+
+### 4️⃣ Receive Offline Message
+
+```json
+{
+  "type": "offline",
+  "from": "sender@example.com",
+  "to": "you@example.com",
+  "message": "Missed this!"
+}
+```
+
+---
+
+##  REST API
+
+### `GET /search-users?q=alice`
+
+- Searches Firebase users by `displayName`
+- Requires Authorization header
+
+---
+
+##  Database Models
+
+### `Message`
+
+| Field                | Type     |
+|---------------------|----------|
+| `id`                | Integer  |
+| `sender`            | String   |
+| `sender_display_name` | String |
+| `recipient`         | String   |
+| `message`           | String   |
+| `timestamp`         | DateTime |
+
+### `OfflineMessage`
+
+Same schema as `Message`, used for undelivered messages.
+
+---
+
+##  Development Notes
+
+- SQLite used by default
+- Can switch `DATABASE_URL` in `db.py`
+- You may optionally drop and recreate tables:
+  ```python
+  # Base.metadata.drop_all(bind=engine)
+  ```
 
 ---
 
@@ -161,6 +263,9 @@ Feel free to contribute! Fork the repo, make your changes, and submit a pull req
 
 ---
 
-### **License**
+##  License
+
 This project is open-source and available under the GNU General Public License v3.0.
+
+---
 
