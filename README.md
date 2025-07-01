@@ -4,7 +4,7 @@
 
 **Privora** is a real-time chat backend powered by FastAPI, Firebase Authentication, and WebSockets. It includes secure token-based login, message persistence (with offline delivery), and a Dockerized setup for easy development and deployment.
 
-![Lines of Code](https://img.shields.io/badge/lines_of_code-589-brightgreen)
+![Lines of Code](https://img.shields.io/badge/lines_of_code-529-brightgreen)
 ![GitHub issues](https://img.shields.io/github/issues/med1001/Privora)
 ![GitHub stars](https://img.shields.io/github/stars/med1001/Privora)
 ![GitHub pull requests](https://img.shields.io/github/issues-pr/med1001/Privora)
@@ -65,15 +65,6 @@ ALLOWED_ORIGIN=http://localhost:3000
 
 ##  Docker Usage
 
-###  Dockerfile Overview
-
-The `Dockerfile` does the following:
-
-- Uses `python:3.11-slim`
-- Installs SQLite tools and headers
-- Copies app source to `/app/src`
-- Runs FastAPI app with Uvicorn
-
 ###  Build the Docker Image
 
 From the project root:
@@ -118,9 +109,9 @@ docker network create privora-net
 This project is designed to run as **three coordinated Docker containers** on a shared network:
 
 | Container        | Role                     | Exposed Port  | Internal Hostname  |
-|------------------|--------------------------|-------------- |--------------------|
-| `frontend`       | React/Vite/Static HTML   | -             | `frontend`         |
-| `backend`        | FastAPI WebSocket API    | 8000          | `backend`          |
+|------------------|--------------------------|---------------|--------------------|
+| `frontend`       | React app                |               |  `frontend`        |
+| `backend`        | FastAPI                  | 8000          |   `backend`        |
 | `reverse-proxy`  | NGINX Reverse Proxy      |**80**(for now)| n/a                |
 
 ---
@@ -134,15 +125,6 @@ The reverse proxy (`reverse-proxy` container using NGINX) handles all external t
 | `/`             | `frontend:80`  | Static frontend app        |
 | `/api/`         | `backend:8000` | FastAPI REST API endpoints |
 | `/ws`           | `backend:8000/ws` | WebSocket connection   |
-
-The NGINX config also includes **WebSocket support**:
-
-```nginx
-proxy_http_version 1.1;
-proxy_set_header Upgrade $http_upgrade;
-proxy_set_header Connection $connection_upgrade;
-```
-This ensures real-time communication via WebSocket works correctly.
 
 ---
 
@@ -164,86 +146,7 @@ docker run --network privora-net --name reverse-proxy -p 80:80 ...
 
 > This setup allows NGINX to forward requests to `backend:8000` and `frontend:80` without exposing those ports to the host.
 
-For simpler orchestration, consider using `docker-compose.yml`.
-
----
-
-##  WebSocket API
-
-**Endpoint:** `/ws`
-
-### 1️⃣ Login
-
-```json
-{
-  "type": "login",
-  "token": "<firebase_id_token>"
-}
-```
-
-- Required as the first message
-- Verifies token and registers connection
-- Delivers offline messages if any
-
-### 2️⃣ Send Message
-
-```json
-{
-  "type": "message",
-  "to": "receiver@example.com",
-  "message": "Hi there!"
-}
-```
-
-### 3️⃣ Receive Message (Live)
-
-```json
-{
-  "type": "message",
-  "from": "sender@example.com",
-  "to": "you@example.com",
-  "message": "Hi!"
-}
-```
-
-### 4️⃣ Receive Offline Message
-
-```json
-{
-  "type": "offline",
-  "from": "sender@example.com",
-  "to": "you@example.com",
-  "message": "Missed this!"
-}
-```
-
----
-
-##  REST API
-
-### `GET /search-users?q=alice`
-
-- Searches Firebase users by `displayName`
-- Requires Authorization header
-
----
-
-##  Database Models
-
-### `Message`
-
-| Field                | Type     |
-|---------------------|----------|
-| `id`                | Integer  |
-| `sender`            | String   |
-| `sender_display_name` | String |
-| `recipient`         | String   |
-| `message`           | String   |
-| `timestamp`         | DateTime |
-
-### `OfflineMessage`
-
-Same schema as `Message`, used for undelivered messages.
+For simpler orchestration, we will consider using `docker-compose.yml`later.
 
 ---
 
