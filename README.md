@@ -60,8 +60,10 @@ Create a `.env` file in `server/`:
 FIREBASE_ADMIN_CREDENTIALS_JSON=./src/firebase_credentials.json
 ALLOWED_ORIGIN=http://localhost:3000
 ```
+
 You can use the firebase_credentials.example.json file in src/ as a template for creating your own firebase_credentials.json.
 Make sure to set the correct ALLOWED_ORIGIN in your backend to avoid CORS errors during development and production. This should match the origin of your frontend app (e.g., http://localhost:3000 or your deployed frontend URL).
+
 ---
 
 ##  Docker Usage
@@ -84,11 +86,11 @@ However, if you're **running locally without a reverse proxy**, you **must expos
 
 ```bash
 docker run --env-file ./server/.env -v "${PWD}/server:/app" -p 8000:8000 privora-backend
-
+```
 
 #### ⚙️ Flag Breakdown:
 
-```
+
 --env-file ./server/.env # Loads environment variables into the container.
 -v $(pwd)/server:/app    # For development: mount local code into the container
 -p 8000:8000             # Exposes container port 8000 to your host machine. Only needed when not using a reverse proxy.
