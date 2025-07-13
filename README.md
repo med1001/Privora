@@ -60,7 +60,8 @@ Create a `.env` file in `server/`:
 FIREBASE_ADMIN_CREDENTIALS_JSON=./src/firebase_credentials.json
 ALLOWED_ORIGIN=http://localhost:3000
 ```
-
+You can use the firebase_credentials.example.json file in src/ as a template for creating your own firebase_credentials.json.
+Make sure to set the correct ALLOWED_ORIGIN in your backend to avoid CORS errors during development and production. This should match the origin of your frontend app (e.g., http://localhost:3000 or your deployed frontend URL).
 ---
 
 ##  Docker Usage
@@ -75,18 +76,23 @@ docker build -t privora-backend .
 
 ###  Run the Container
 
+### 🐳 Running the Backend with Docker
+
+If you're using a **reverse proxy** (like Nginx or Traefik), you **do not need to expose a port** with `-p` — the reverse proxy will handle traffic forwarding through the internal Docker network.
+
+However, if you're **running locally without a reverse proxy**, you **must expose the port** to access the backend directly via the browser (e.g., at `http://localhost:8000`). In that case, use the following command:
+
 ```bash
-docker run --env-file ./server/.env privora-backend
-```
+docker run --env-file ./server/.env -v "${PWD}/server:/app" -p 8000:8000 privora-backend
 
-This command runs the backend container using environment variables defined in `./server/.env`.
 
-#### ⚙️ Optional Flags
+#### ⚙️ Flag Breakdown:
 
 ```
+--env-file ./server/.env # Loads environment variables into the container.
 -v $(pwd)/server:/app    # For development: mount local code into the container
--p 8000:8000             # For local access without reverse proxy
---network privora-net    # For multi-container setup (backend, frontend, reverse proxy)
+-p 8000:8000             # Exposes container port 8000 to your host machine. Only needed when not using a reverse proxy.
+--network privora-net    # (optional) Connects the container to a specific Docker network. Use this if you're working with other containers (e.g., database, reverse proxy).
 ```
 
 - Use `-v` during **development** to mount your local code. This enables hot-reloading or quick changes without rebuilding.
@@ -99,7 +105,9 @@ This command runs the backend container using environment variables defined in `
 docker network create privora-net
 ```
 
-> 📌 On **Windows**, replace `$(pwd)` with `%cd%`.
+> 📌 On **Windows**:
+> - In **CMD**, replace `$(pwd)` with `%cd%`
+> - In **PowerShell**, use `"${PWD}/server:/app"`
 
 ---
 
