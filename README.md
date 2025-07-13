@@ -90,16 +90,12 @@ docker run --env-file ./server/.env -v "${PWD}/server:/app" -p 8000:8000 privora
 
 #### ⚙️ Flag Breakdown:
 
-
+```
 --env-file ./server/.env # Loads environment variables into the container.
 -v $(pwd)/server:/app    # For development: mount local code into the container
 -p 8000:8000             # Exposes container port 8000 to your host machine. Only needed when not using a reverse proxy.
 --network privora-net    # (optional) Connects the container to a specific Docker network. Use this if you're working with other containers (e.g., database, reverse proxy).
 ```
-
-- Use `-v` during **development** to mount your local code. This enables hot-reloading or quick changes without rebuilding.
-- Use `-p` if you're **not using a reverse proxy** and want to access the backend directly at `http://localhost:8000`.
-- Use `--network privora-net` when running the backend alongside **frontend** and **reverse proxy** containers to enable internal communication by container name (e.g., `backend`, `frontend`).
 
 > 🛠️ If using `--network privora-net`, you **must create the network first** (only once):
 
