@@ -4,7 +4,7 @@
 
 **Privora** is a real-time chat backend powered by FastAPI, Firebase Authentication, and WebSockets. It includes secure token-based login, message persistence (with offline delivery), and a Dockerized setup for easy development and deployment.
 
-![Lines of Code](https://img.shields.io/badge/lines_of_code-525-brightgreen)
+![Lines of Code](https://img.shields.io/badge/lines_of_code-523-brightgreen)
 ![GitHub issues](https://img.shields.io/github/issues/med1001/Privora)
 ![GitHub stars](https://img.shields.io/github/stars/med1001/Privora)
 ![GitHub pull requests](https://img.shields.io/github/issues-pr/med1001/Privora)
