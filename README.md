@@ -78,7 +78,7 @@ docker build -t privora-backend .
 
 ###  Run the Container
 
-### 🐳 Running the Backend with Docker
+####  Running the Backend with Docker
 
 If you're using a **reverse proxy** (like Nginx or Traefik), you **do not need to expose a port** with `-p` — the reverse proxy will handle traffic forwarding through the internal Docker network.
 
@@ -88,7 +88,7 @@ However, if you're **running locally without a reverse proxy**, you **must expos
 docker run --env-file ./server/.env -v "${PWD}/server:/app" -p 8000:8000 privora-backend
 ```
 
-#### ⚙️ Flag Breakdown:
+####  Flag Breakdown:
 
 ```
 --env-file ./server/.env # Loads environment variables into the container.
@@ -167,7 +167,7 @@ For simpler orchestration, we will consider using `docker-compose.yml`later.
 
 ---
 
-### **Contributing**
+## Contributing
 Feel free to contribute! Fork the repo, make your changes, and submit a pull request.
 
 ---
