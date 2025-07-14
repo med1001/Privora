@@ -19,7 +19,7 @@
 
 ##  Features
 
--  Firebase Authentication (JWT)
+-  Firebase Authentication
 -  WebSocket-based real-time chat
 -  Offline message queuing & delivery
 -  User directory search via Firebase
@@ -122,7 +122,7 @@ This project is designed to run as **three coordinated Docker containers** on a 
 | Container        | Role                     | Exposed Port  | Internal Hostname  |
 |------------------|--------------------------|---------------|--------------------|
 | `frontend`       | React app                |               |  `frontend`        |
-| `backend`        | FastAPI                  | 8000          |   `backend`        |
+| `backend`        | FastAPI                  |               |   `backend`        |
 | `reverse-proxy`  | NGINX Reverse Proxy      |**80**(for now)| n/a                |
 
 ---
