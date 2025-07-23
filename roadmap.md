@@ -5,45 +5,67 @@ Welcome to the Privora roadmap! This document outlines the major features and im
 ## Table of Contents
 - [Introduction](#introduction)
 - [Current Goals](#current-goals)
-- [Upcoming Features](#upcoming-features)
+- [Recently Completed Features](#recently-completed-features)
 - [Future Enhancements](#future-enhancements)
 - [Completed Milestones](#completed-milestones)
 - [How to Contribute](#how-to-contribute)
 
 ## Introduction
 
-Privora is a distributed chat application Built on a client-server architecture, it enables real-time communication between users while emphasizing multithreading, network communication, and efficient socket programming.
+Privora is a real-time chat application built on a client-server architecture. It enables seamless communication between users while leveraging multithreading, network communication, and efficient socket programming.
 
 This chat app roadmap outlines the goals for the upcoming phases of the project. This includes upcoming features, optimizations, and bug fixes. We want to keep the community informed and involved in the direction we're heading.
 
 ## Current Goals
 
-As of now, the core functionality of the project is our main focus as well as addressing user feedback. These goals are of the highest priority as we aim to complete them in the upcoming months.
+With the core functionality of the project already implemented — including real-time private messaging, message persistence, and a functional web-based interface — the current focus has shifted toward refining and securing the system.
+
+Our top priorities for the coming months include:
+
+- Implementing user presence tracking (online/offline status).
+- Reinforcing security practices, including:
+  - Input sanitization and session management.
+  - End-to-end encryption for private messages.
+- Continuously improving the user experience based on ongoing feedback and testing.
+
+These enhancements aim to make the platform more secure, reliable, and user-friendly.
+
 ### Goal 1: Server-Side Development
-- Implement a TCP server to handle multiple client connections concurrently.
-- Create mechanisms for broadcasting messages to all connected clients.
-- Ensure robust error handling for socket operations.
-### Goal 2: Client-Side Development
-- Build a command-line interface (CLI) client for sending and receiving messages.
-- Implement user commands like /exit to disconnect and /help for usage instructions.
-- Handle real-time message display from other clients.
+- Set up a WebSocket-based backend to support real-time communication between users.
+- Implement user authentication and connection management.
+- Enable direct one-to-one (private) messaging between users.
+- Store messages in the backend to support delivery when recipients reconnect (message persistence).
+- Handle user presence status (online/offline) for message routing and delivery.
+- Ensure scalability and security of the messaging service (e.g., input validation, session handling).
+
+### Goal 2: Client-Side Development (Web App UI)
+- Build a responsive web-based user interface for sending and receiving messages.
+- Implement UI elements such as:
+  - Message input box and send button.
+  - Scrollable chat window for real-time message display from other users.
+  - Navigation or modal support for help and usage instructions.
+- Add user-friendly features like:
+  - `/exit` command triggers session logout or page redirect.
+  - `/help` displays a modal or tooltip with usage guidelines.
+- Ensure real-time updates using WebSockets or other push-based technology for live message exchange.
+
 ### Goal 3: Multi-threading and Synchronization
 - Ensure the server handles multiple clients in parallel using threads.
 - Enable the client to send and receive messages simultaneously without blocking.
 - Synchronize access to shared resources to avoid race conditions.
 
-## Upcoming Features
+## Recently Completed Features
 
-Here are the major features we plan to work on. These features are already in the planning phase and will be developed and released based on community feedback and demand.
+These features were previously planned and are now fully implemented:
 
-- **Private Messaging** 
-Allow users to send private messages to specific clients using commands like /msg <username> <message>.
+- **Private Messaging**  
+Users can send direct messages.
 
-- **Message Timestamps**
-Add timestamps to each message to show when it was sent, improving user experience.
+- **Message Timestamps**  
+Each message now includes a timestamp to indicate when it was sent.
 
-- **Message History** 
-Implement a feature to display recent messages when clients join the chat.
+- **Message History**  
+Clients receive recent message history upon login, ensuring continuity in conversations.
 
 ## Future Enhancements
 
