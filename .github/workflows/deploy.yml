@@ -36,11 +36,19 @@ jobs:
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
             cd ~
-            # 1. Récupérer la dernière image
+            # 1. Créer le dossier secrets s'il n'existe pas
+            mkdir -p ~/secrets
+            
+            # 2. Injecter le JSON de Firebase depuis les secrets GitHub
+            cat << 'EOF' > ~/secrets/firebase-adminsdk.json
+            ${{ secrets.FIREBASE_ADMIN_JSON_CONTENT }}
+            EOF
+            
+            # 3. Récupérer la dernière image
             docker pull ${{ secrets.DOCKER_USERNAME }}/prvra:latest
             
-            # 2. Relancer le backend avec la V2
+            # 4. Relancer le backend avec la V2
             docker compose up -d --force-recreate backend
             
-            # 3. Nettoyage
+            # 5. Nettoyage des anciennes images
             docker image prune -f
