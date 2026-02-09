@@ -9,7 +9,7 @@
 ![WebSockets](https://img.shields.io/badge/WebSockets-333333?style=for-the-badge&logo=websockets&logoColor=white)
 ![Docker](https://img.shields.io/badge/Docker-2496ED?style=for-the-badge&logo=docker&logoColor=white)
 
-![Lines of Code](https://img.shields.io/badge/lines_of_code-579-brightgreen)
+![Lines of Code](https://img.shields.io/badge/lines_of_code-583-brightgreen)
 ![GitHub issues](https://img.shields.io/github/issues/med1001/Privora)
 ![GitHub stars](https://img.shields.io/github/stars/med1001/Privora)
 ![GitHub pull requests](https://img.shields.io/github/issues-pr/med1001/Privora)
