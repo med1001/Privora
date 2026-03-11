@@ -24,9 +24,9 @@ async def handle_incoming_message(sender_email, websocket, data):
         try:
             db.add(Message(sender=sender_email, recipient=recipient_email, message=message))
             db.commit()
-            print(f"[DB] ✅ Message stored → {sender_email} → {recipient_email}")
+            print(f"[DB]  Message stored → {sender_email} → {recipient_email}")
         except Exception as e:
-            print(f"[ERROR] ({sender_email}) ❌ Failed to store message → {e}")
+            print(f"[ERROR] ({sender_email})  Failed to store message → {e}")
             traceback.print_exc()
 
         # Deliver to online recipient or store offline
@@ -40,13 +40,13 @@ async def handle_incoming_message(sender_email, websocket, data):
                     "message": message
                 }
                 await active_connections[recipient_email].send_text(json.dumps(payload))
-                print(f"[DELIVERY] ✅ Sent to online user → '{recipient_email}'")
+                print(f"[DELIVERY]  Sent to online user → '{recipient_email}'")
             else:
                 db.add(OfflineMessage(sender=sender_email, recipient=recipient_email, message=message))
                 db.commit()
-                print(f"[OFFLINE STORAGE] 💾 Stored offline → '{recipient_email}'")
+                print(f"[OFFLINE STORAGE]  Stored offline → '{recipient_email}'")
         except Exception as e:
-            print(f"[ERROR] ({sender_email}) ❌ Delivery/store failed for '{recipient_email}' → {e}")
+            print(f"[ERROR] ({sender_email})  Delivery/store failed for '{recipient_email}' → {e}")
             traceback.print_exc()
 
     elif msg_type == "login":
@@ -66,11 +66,11 @@ async def handle_incoming_message(sender_email, websocket, data):
                 db.delete(msg)
 
             db.commit()
-            print(f"[LOGIN] ✅ Finished delivering offline messages → ({sender_email})")
+            print(f"[LOGIN]  Finished delivering offline messages → ({sender_email})")
 
         except Exception as e:
-            print(f"[ERROR] ({sender_email}) ❌ Retrieving/sending offline failed → {e}")
+            print(f"[ERROR] ({sender_email})  Retrieving/sending offline failed → {e}")
             traceback.print_exc()
 
     else:
-        print(f"[WARNING] ({sender_email}) ⚠️ Unknown message type: '{msg_type}' → {data}")
+        print(f"[WARNING] ({sender_email})  Unknown message type: '{msg_type}' → {data}")

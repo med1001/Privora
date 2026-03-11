@@ -41,6 +41,23 @@ app.add_middleware(
 
 active_connections = {}  # user_email → websocket
 
+async def broadcast_presence(user_email: str, status: str):
+    """Notify all connected clients that a given user went online/offline."""
+    if not active_connections:
+        return
+
+    payload = json.dumps({
+        "type": "presence",
+        "userId": user_email,
+        "status": status,
+    })
+
+    for ws in list(active_connections.values()):
+        try:
+            await ws.send_text(payload)
+        except Exception as e:
+            print(f"[WS PRESENCE ERROR] Failed to send to a client: {e}")
+
 # ---------- Token Verification ----------
 def verify_token(token: str):
     try:
@@ -110,12 +127,32 @@ async def websocket_endpoint(websocket: WebSocket):
                 print(f"[WS LOGIN SUCCESS] {user_email}")
                 active_connections[user_email] = websocket
 
+                # Notify all clients that this user is now online
+                await broadcast_presence(user_email, "online")
+
+                # Send the new client a snapshot of who is currently online
+                for other_email, other_ws in active_connections.items():
+                    if other_email == user_email:
+                        continue
+                    try:
+                        await websocket.send_text(json.dumps({
+                            "type": "presence",
+                            "userId": other_email,
+                            "status": "online",
+                        }))
+                    except Exception as e:
+                        print(f"[WS PRESENCE SNAPSHOT ERROR] {e}")
+
             if user_email:
                 await handle_incoming_message(user_email, websocket, data_json)
 
     except WebSocketDisconnect:
         print(f"[WS DISCONNECTED] {user_email if user_email else 'Unknown user'}")
-        active_connections.pop(user_email, None)
+        if user_email:
+            active_connections.pop(user_email, None)
+            await broadcast_presence(user_email, "offline")
     except Exception as e:
         print(f"[WS ERROR] {e}")
-        active_connections.pop(user_email, None)
+        if user_email:
+            active_connections.pop(user_email, None)
+            await broadcast_presence(user_email, "offline")

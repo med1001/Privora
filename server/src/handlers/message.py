@@ -1,5 +1,6 @@
 from src.db import get_db
 from src.models import Message, OfflineMessage
+from firebase_admin import auth as firebase_auth
 import json
 import traceback
 
@@ -83,6 +84,36 @@ async def handle_incoming_message(sender_email, websocket, data):
                 "messages": history_payload
             }))
             print(f"[WS HISTORY] ✅ Sent history ({len(history_payload)} messages)")
+
+            # ✅ Build and send a contacts list with proper display names
+            other_participants = set()
+            for msg in history:
+                if msg.sender != sender_email:
+                    other_participants.add(msg.sender)
+                if msg.recipient != sender_email:
+                    other_participants.add(msg.recipient)
+
+            contacts_payload = []
+            for email in other_participants:
+                display_name = ""
+                try:
+                    user_record = firebase_auth.get_user_by_email(email)
+                    display_name = (user_record.display_name or "").strip()
+                except Exception as e:
+                    # If lookup fails, fall back to empty and let frontend handle
+                    print(f"[WS CONTACTS] Firebase lookup failed for {email}: {e}")
+
+                contacts_payload.append({
+                    "userId": email,
+                    "displayName": display_name or email,
+                })
+
+            if contacts_payload:
+                await websocket.send_text(json.dumps({
+                    "type": "contacts",
+                    "contacts": contacts_payload,
+                }))
+                print(f"[WS CONTACTS] ✅ Sent contacts ({len(contacts_payload)} users)")
 
         except Exception as e:
             print(f"[WS ERROR] History retrieval → {e}")
