@@ -1,38 +1,150 @@
-# Deployment Workflow
-
-name: Deploy
+name: Deploy Backend to EC2
 
 on:
   push:
     branches: [ main ]
 
 jobs:
-  deploy:
+  build-and-push:
     runs-on: ubuntu-latest
-
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v2
+      - name: Checkout code
+        uses: actions/checkout@v3
 
-    - name: Connectivity Check
-      run: |
-        echo "Running connectivity checks..."
-        if nc -z -w5 your.server.com 22; then
-          echo "Server is reachable"
-        else
-          echo "Server is not reachable"
-          exit 1
-        fi
+      - name: Login to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
 
-    - name: Debug Logging
-      run: |
-        echo "Starting deployment..."
-        echo "Using SSH with verbose logging"
+      - name: Build and push Backend
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          push: true
+          tags: ${{ secrets.DOCKER_USERNAME }}/prvra:latest
 
-    - name: SSH Connection
-      run: |
-        ssh -vvv user@your.server.com 'echo Connection successful' || (echo 'SSH connection failed'; exit 1)
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    steps:
+      - name: Debug - Display Runner Information
+        run: |
+          echo "=== RUNNER INFO ==="
+          echo "Runner OS: ${{ runner.os }}"
+          echo "Runner Arch: ${{ runner.arch }}"
+          echo "Current Date/Time: $(date -u)"
+          echo "Network Interfaces:"
+          ip addr show || ifconfig
+          echo ""
 
-    - name: Additional Commands
-      run: |
-        echo "Executing additional deployment commands..."
+      - name: Debug - Network Connectivity Check
+        run: |
+          echo "=== NETWORK CONNECTIVITY CHECK ==="
+          echo "Checking if EC2_HOST is set..."
+          if [ -z "${{ secrets.EC2_HOST }}" ]; then
+            echo "ERROR: EC2_HOST secret is not set!"
+            exit 1
+          fi
+          echo "EC2_HOST is configured (value hidden for security)"
+          echo ""
+          echo "Testing DNS resolution..."
+          nslookup ${{ secrets.EC2_HOST }} || dig ${{ secrets.EC2_HOST }} || echo "DNS lookup failed"
+          echo ""
+          echo "Testing connectivity with nc (netcat)..."
+          timeout 10 nc -zv -w 5 ${{ secrets.EC2_HOST }} 22 || echo "netcat connection failed"
+          echo ""
+          echo "Testing with telnet..."
+          timeout 10 bash -c 'echo > /dev/tcp/${{ secrets.EC2_HOST }}/22' && echo "Port 22 is open" || echo "Port 22 is not reachable"
+          echo ""
+
+      - name: Debug - SSH Key Validation
+        run: |
+          echo "=== SSH KEY VALIDATION ==="
+          if [ -z "${{ secrets.EC2_SSH_KEY }}" ]; then
+            echo "ERROR: EC2_SSH_KEY secret is not set!"
+            exit 1
+          fi
+          echo "EC2_SSH_KEY is configured (value hidden for security)"
+          echo "SSH Key Size: $(echo "${{ secrets.EC2_SSH_KEY }}" | wc -c) bytes"
+          echo ""
+
+      - name: Debug - Environment Variables
+        run: |
+          echo "=== ENVIRONMENT VARIABLES ==="
+          echo "EC2_USER: ${{ secrets.EC2_USER }}"
+          echo "DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}"
+          echo "GitHub Workspace: ${{ github.workspace }}"
+          echo "Runner Temp: ${{ runner.temp }}"
+          echo ""
+
+      - name: Deploy via SSH with Enhanced Debugging
+        uses: appleboy/ssh-action@v0.1.10
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          timeout: 30s
+          command_timeout: 10m
+          debug: true
+          script: |
+            echo "=== SSH CONNECTION ESTABLISHED ==="
+            echo "Connected at: $(date -u)"
+            echo "Current user: $(whoami)"
+            echo "Current directory: $(pwd)"
+            echo "System info: $(uname -a)"
+            echo ""
+            
+            echo "=== DOCKER VERIFICATION ==="
+            docker --version || echo "Docker not found"
+            docker compose version || echo "Docker Compose not found"
+            echo ""
+            
+            echo "=== STEP 1: Creating secrets directory ==="
+            mkdir -p ~/secrets && echo "Secrets directory created/verified"
+            ls -la ~/ | grep secrets
+            echo ""
+            
+            echo "=== STEP 2: Injecting Firebase Admin SDK ==="
+            cat << 'EOF' > ~/secrets/firebase-adminsdk.json
+            ${{ secrets.FIREBASE_ADMIN_JSON_CONTENT }}
+            EOF
+            if [ -f ~/secrets/firebase-adminsdk.json ]; then
+              echo "Firebase config file created successfully"
+              echo "File size: $(wc -c < ~/secrets/firebase-adminsdk.json) bytes"
+            else
+              echo "ERROR: Firebase config file was not created"
+              exit 1
+            fi
+            echo ""
+            
+            echo "=== STEP 3: Pulling latest Docker image ==="
+            docker pull ${{ secrets.DOCKER_USERNAME }}/prvra:latest || echo "Docker pull failed"
+            echo ""
+            
+            echo "=== STEP 4: Starting backend with docker compose ==="
+            docker compose up -d --force-recreate backend || echo "Docker compose up failed"
+            echo ""
+            
+            echo "=== STEP 5: Docker cleanup ==="
+            docker image prune -f
+            echo ""
+            
+            echo "=== DEPLOYMENT COMPLETE ==="
+            echo "Completed at: $(date -u)"
+            docker ps || echo "Docker ps command failed"
+            echo ""
+
+      - name: Debug - Deployment Status
+        if: failure()
+        run: |
+          echo "=== DEPLOYMENT FAILED ==="
+          echo "Failure time: $(date -u)"
+          echo "Check the SSH action logs above for detailed error information"
+          echo ""
+          echo "Common issues:"
+          echo "1. EC2 security group doesn't allow SSH (port 22)"
+          echo "2. EC2 instance is not running"
+          echo "3. SSH key is incorrect or not in the right format"
+          echo "4. EC2 hostname/IP is incorrect"
+          echo "5. Network connectivity issues from GitHub Actions"
