@@ -1,54 +1,38 @@
-name: Deploy Backend to EC2
+# Deployment Workflow
+
+name: Deploy
 
 on:
   push:
     branches: [ main ]
 
 jobs:
-  build-and-push:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
-
-      - name: Login to Docker Hub
-        uses: docker/login-action@v2
-        with:
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
-
-      - name: Build and push Backend
-        uses: docker/build-push-action@v4
-        with:
-          context: .
-          push: true
-          tags: ${{ secrets.DOCKER_USERNAME }}/prvra:latest
-
   deploy:
-    needs: build-and-push
     runs-on: ubuntu-latest
+
     steps:
-      - name: Deploy via SSH
-        uses: appleboy/ssh-action@v0.1.10
-        with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ${{ secrets.EC2_USER }}
-          key: ${{ secrets.EC2_SSH_KEY }}
-          script: |
-            cd ~
-            # 1. Créer le dossier secrets s'il n'existe pas
-            mkdir -p ~/secrets
-            
-            # 2. Injecter le JSON de Firebase depuis les secrets GitHub
-            cat << 'EOF' > ~/secrets/firebase-adminsdk.json
-            ${{ secrets.FIREBASE_ADMIN_JSON_CONTENT }}
-            EOF
-            
-            # 3. Récupérer la dernière image
-            docker pull ${{ secrets.DOCKER_USERNAME }}/prvra:latest
-            
-            # 4. Relancer le backend avec la V2
-            docker compose up -d --force-recreate backend
-            
-            # 5. Nettoyage des anciennes images
-            docker image prune -f
+    - name: Checkout code
+      uses: actions/checkout@v2
+
+    - name: Connectivity Check
+      run: |
+        echo "Running connectivity checks..."
+        if nc -z -w5 your.server.com 22; then
+          echo "Server is reachable"
+        else
+          echo "Server is not reachable"
+          exit 1
+        fi
+
+    - name: Debug Logging
+      run: |
+        echo "Starting deployment..."
+        echo "Using SSH with verbose logging"
+
+    - name: SSH Connection
+      run: |
+        ssh -vvv user@your.server.com 'echo Connection successful' || (echo 'SSH connection failed'; exit 1)
+
+    - name: Additional Commands
+      run: |
+        echo "Executing additional deployment commands..."
