@@ -20,9 +20,14 @@ async def handle_incoming_message(sender_email, websocket, data):
             return
 
         # ✅ Store in Message table with from_display_name
+        msg_timestamp_iso = None
         try:
-            db.add(Message(sender=sender_email, recipient=recipient_email, message=message, sender_display_name=from_display_name))
+            new_msg = Message(sender=sender_email, recipient=recipient_email, message=message, sender_display_name=from_display_name)
+            db.add(new_msg)
             db.commit()
+            db.refresh(new_msg)
+            if new_msg.timestamp:
+                msg_timestamp_iso = new_msg.timestamp.isoformat()
             print(f"[DB] ✅ Stored → {sender_email} → {recipient_email}")
         except Exception as e:
             print(f"[DB ERROR] Failed to store → {e}")
@@ -37,7 +42,8 @@ async def handle_incoming_message(sender_email, websocket, data):
                     "from": sender_email,
                     "fromDisplayName": from_display_name,
                     "to": recipient_email,
-                    "message": message
+                    "message": message,
+                    "timestamp": msg_timestamp_iso
                 }))
                 print(f"[WS DELIVERY] ✅ Sent to online user → {recipient_email}")
             else:
