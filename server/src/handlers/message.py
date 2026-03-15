@@ -124,6 +124,29 @@ async def handle_incoming_message(sender_email, websocket, data):
         except Exception as e:
             print(f"[WS ERROR] History retrieval → {e}")
             traceback.print_exc()
-
+    elif msg_type in ["call_offer", "call_answer", "ice_candidate", "call_reject", "call_end", "call_ring"]:
+        recipient_email = data.get("to")
+        if not recipient_email:
+            print(f"[WS ERROR] Missing 'to' for type {msg_type}")
+            return
+            
+        from src.main import active_connections
+        if recipient_email in active_connections:
+            # Forward the signaling event exactly as received but with "from" added
+            forward_data = data.copy()
+            forward_data["from"] = sender_email
+            await active_connections[recipient_email].send_text(json.dumps(forward_data))
+            print(f"[WS SIGNALING] ✅ Forwarded {msg_type} from {sender_email} to {recipient_email}")
+        else:
+            # If they are totally offline, instantly send back a reject/offline to the caller
+            if msg_type == "call_offer":
+                await websocket.send_text(json.dumps({
+                    "type": "call_reject",
+                    "reason": "offline",
+                    "from": recipient_email,
+                    "to": sender_email
+                }))
+                print(f"[WS SIGNALING] Target {recipient_email} offline. Rejected call for {sender_email}")
     else:
         print(f"[WS WARNING] Unknown message type '{msg_type}' → {data}")
+
