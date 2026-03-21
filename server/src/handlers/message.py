@@ -121,6 +121,22 @@ async def handle_incoming_message(sender_email, websocket, data):
                 }))
                 print(f"[WS CONTACTS] ✅ Sent contacts ({len(contacts_payload)} users)")
 
+            # ✅ Check for any pending calls 
+            from src.main import pending_calls, active_connections
+            if sender_email in pending_calls:
+                offer_info = pending_calls.pop(sender_email)
+                await websocket.send_text(json.dumps(offer_info["data"]))
+                print(f"[WS SIGNALING] 🎉 Delivered queued call offer to {sender_email}")
+                
+                # Notify the caller that they are now online and it's ringing
+                caller = offer_info["from"]
+                if caller in active_connections:
+                    await active_connections[caller].send_text(json.dumps({
+                        "type": "call_ring",
+                        "from": sender_email,
+                        "to": caller
+                    }))
+
         except Exception as e:
             print(f"[WS ERROR] History retrieval → {e}")
             traceback.print_exc()
@@ -130,23 +146,39 @@ async def handle_incoming_message(sender_email, websocket, data):
             print(f"[WS ERROR] Missing 'to' for type {msg_type}")
             return
             
-        from src.main import active_connections
+        from src.main import active_connections, pending_calls
         if recipient_email in active_connections:
             # Forward the signaling event exactly as received but with "from" added
             forward_data = data.copy()
             forward_data["from"] = sender_email
             await active_connections[recipient_email].send_text(json.dumps(forward_data))
+            
+            # Clean up pending calls if they end/reject/answer
+            if msg_type in ["call_answer", "call_reject", "call_end"]:
+                if recipient_email in pending_calls:
+                    del pending_calls[recipient_email]
+                if sender_email in pending_calls:
+                    del pending_calls[sender_email]
+                    
             print(f"[WS SIGNALING] ✅ Forwarded {msg_type} from {sender_email} to {recipient_email}")
         else:
-            # If they are totally offline, instantly send back a reject/offline to the caller
             if msg_type == "call_offer":
+                # Queue the call offer for when they log in 
+                forward_data = data.copy()
+                forward_data["from"] = sender_email
+                pending_calls[recipient_email] = {"from": sender_email, "data": forward_data}
+                
+                # Tell the caller they are offline but keep ringing
                 await websocket.send_text(json.dumps({
-                    "type": "call_reject",
-                    "reason": "offline",
+                    "type": "call_ring_offline",
                     "from": recipient_email,
                     "to": sender_email
                 }))
-                print(f"[WS SIGNALING] Target {recipient_email} offline. Rejected call for {sender_email}")
+                print(f"[WS SIGNALING] Target {recipient_email} offline. Queued call for {sender_email}")
+            elif msg_type == "call_end":
+                if recipient_email in pending_calls and pending_calls[recipient_email]["from"] == sender_email:
+                    del pending_calls[recipient_email]
+                    print(f"[WS SIGNALING] Cancelled pending call to {recipient_email}")
     else:
         print(f"[WS WARNING] Unknown message type '{msg_type}' → {data}")
 

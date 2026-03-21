@@ -39,8 +39,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-active_connections = {}  # user_email → websocket
-
+active_connections = {}  # user_email -> websocket
+pending_calls = {}       # recipient_email -> {"from": caller_email, "data": offer_data}
 async def broadcast_presence(user_email: str, status: str):
     """Notify all connected clients that a given user went online/offline."""
     if not active_connections:
@@ -150,9 +150,20 @@ async def websocket_endpoint(websocket: WebSocket):
         print(f"[WS DISCONNECTED] {user_email if user_email else 'Unknown user'}")
         if user_email:
             active_connections.pop(user_email, None)
+            
+            # Clean up pending calls if caller abruptly disconnects
+            for to_user, offer in list(pending_calls.items()):
+                if offer["from"] == user_email:
+                    del pending_calls[to_user]
+                    
             await broadcast_presence(user_email, "offline")
     except Exception as e:
         print(f"[WS ERROR] {e}")
         if user_email:
             active_connections.pop(user_email, None)
+            
+            for to_user, offer in list(pending_calls.items()):
+                if offer["from"] == user_email:
+                    del pending_calls[to_user]
+
             await broadcast_presence(user_email, "offline")
