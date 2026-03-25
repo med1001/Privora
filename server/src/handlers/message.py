@@ -149,41 +149,42 @@ async def handle_incoming_message(sender_email, websocket, data):
 
     elif msg_type == "reaction":
         msg_id = data.get("msg_id")
-          emoji = data.get("reaction")
-          recipient_email = data.get("to")
+        emoji = data.get("reaction")
+        recipient_email = data.get("to")
 
-          if not msg_id or not emoji or not recipient_email:
-              print(f"[WS ERROR] Missing 'msg_id', 'reaction' or 'to' for reaction → {data}")
-              return
+        if not msg_id or not emoji or not recipient_email:
+            print(f"[WS ERROR] Missing 'msg_id', 'reaction' or 'to' for reaction → {data}")
+            return
 
-          try:
-              # Update history message
-              original_msg = db.query(Message).filter_by(msg_id=msg_id).first()
-              if original_msg:
-                  reactions = json.loads(original_msg.reactions) if original_msg.reactions else {}
-                  reactions[sender_email] = emoji
-                  original_msg.reactions = json.dumps(reactions)
-                  db.commit()
+        try:
+            # Update history message
+            original_msg = db.query(Message).filter_by(msg_id=msg_id).first()
+            if original_msg:
+                reactions = json.loads(original_msg.reactions) if original_msg.reactions else {}
+                reactions[sender_email] = emoji
+                original_msg.reactions = json.dumps(reactions)
+                db.commit()
 
-              # Update offline message if it exists there
-              offline_msg = db.query(OfflineMessage).filter_by(msg_id=msg_id).first()
-              if offline_msg:
-                  reactions = json.loads(offline_msg.reactions) if offline_msg.reactions else {}
-                  reactions[sender_email] = emoji
-                  offline_msg.reactions = json.dumps(reactions)
-                  db.commit()
+            # Update offline message if it exists there
+            offline_msg = db.query(OfflineMessage).filter_by(msg_id=msg_id).first()
+            if offline_msg:
+                reactions = json.loads(offline_msg.reactions) if offline_msg.reactions else {}
+                reactions[sender_email] = emoji
+                offline_msg.reactions = json.dumps(reactions)
+                db.commit()
 
-              print(f"[DB] ✅ Reaction updated on {msg_id}")
+            print(f"[DB] ✅ Reaction updated on {msg_id}")
 
-              # Send to recipient if online
-              from src.main import active_connections
-              if recipient_email in active_connections:
-                  await active_connections[recipient_email].send_text(json.dumps({
-                      "type": "reaction",
-                      "msg_id": msg_id,
-                      "from": sender_email,
-                      "to": recipient_email,
-                      "reaction": emoji
+            # Send to recipient if online
+            from src.main import active_connections
+            if recipient_email in active_connections:
+                await active_connections[recipient_email].send_text(json.dumps({
+                    "type": "reaction",
+                    "msg_id": msg_id,
+                    "from": sender_email,
+                    "to": recipient_email,
+                    "reaction": emoji
+                }))
 
         except Exception as e:
             print(f"[DB ERROR] Failed to store reaction → {e}")
