@@ -13,6 +13,7 @@ async def handle_incoming_message(sender_email, websocket, data):
     if msg_type == "message":
         recipient_email = data.get("to")
         message = data.get("message")
+        msg_id = data.get("msg_id", "")  # Get front-end generated ID
         from_display_name = data.get("fromDisplayName", sender_email)  # ✅ Get display name from frontend, fallback to email
 
         if not recipient_email or not message:
@@ -22,7 +23,7 @@ async def handle_incoming_message(sender_email, websocket, data):
         # ✅ Store in Message table with from_display_name
         msg_timestamp_iso = None
         try:
-            new_msg = Message(sender=sender_email, recipient=recipient_email, message=message, sender_display_name=from_display_name)
+            new_msg = Message(sender=sender_email, recipient=recipient_email, message=message, sender_display_name=from_display_name, msg_id=msg_id)
             db.add(new_msg)
             db.commit()
             db.refresh(new_msg)
@@ -39,6 +40,7 @@ async def handle_incoming_message(sender_email, websocket, data):
             if recipient_email in active_connections:
                 await active_connections[recipient_email].send_text(json.dumps({
                     "type": "message",
+                    "msg_id": msg_id,
                     "from": sender_email,
                     "fromDisplayName": from_display_name,
                     "to": recipient_email,
@@ -47,7 +49,7 @@ async def handle_incoming_message(sender_email, websocket, data):
                 }))
                 print(f"[WS DELIVERY] ✅ Sent to online user → {recipient_email}")
             else:
-                db.add(OfflineMessage(sender=sender_email, recipient=recipient_email, message=message, sender_display_name=from_display_name))
+                db.add(OfflineMessage(sender=sender_email, recipient=recipient_email, message=message, sender_display_name=from_display_name, msg_id=msg_id))
                 db.commit()
                 print(f"[WS OFFLINE STORAGE] → {recipient_email}")
         except Exception as e:
@@ -63,9 +65,11 @@ async def handle_incoming_message(sender_email, websocket, data):
             for msg in offline_messages:
                 await websocket.send_text(json.dumps({
                     "type": "offline",
+                    "msg_id": msg.msg_id,
                     "from": msg.sender,
                     "to": msg.recipient,
                     "message": msg.message,
+                    "reactions": json.loads(msg.reactions) if msg.reactions else {},
                     "timestamp": msg.timestamp.isoformat() if msg.timestamp else None
                 }))
                 db.delete(msg)
@@ -78,10 +82,12 @@ async def handle_incoming_message(sender_email, websocket, data):
             ).order_by(Message.timestamp.asc()).all()
 
             history_payload = [{
+                "msg_id": msg.msg_id,
                 "from": msg.sender,
                 "fromDisplayName": msg.sender_display_name or msg.sender,  # ✅ Include display name in history
                 "to": msg.recipient,
                 "message": msg.message,
+                "reactions": json.loads(msg.reactions) if msg.reactions else {},
                 "timestamp": msg.timestamp.isoformat() if msg.timestamp else None
             } for msg in history]
 
@@ -140,6 +146,51 @@ async def handle_incoming_message(sender_email, websocket, data):
         except Exception as e:
             print(f"[WS ERROR] History retrieval → {e}")
             traceback.print_exc()
+
+    elif msg_type == "reaction":
+        msg_id = data.get("msg_id")
+        emoji = data.get("emoji")
+        recipient_email = data.get("to")
+
+        if not msg_id or not emoji or not recipient_email:
+            print(f"[WS ERROR] Missing 'msg_id', 'emoji' or 'to' for reaction → {data}")
+            return
+
+        try:
+            # Update history message
+            original_msg = db.query(Message).filter_by(msg_id=msg_id).first()
+            if original_msg:
+                reactions = json.loads(original_msg.reactions) if original_msg.reactions else {}
+                reactions[sender_email] = emoji
+                original_msg.reactions = json.dumps(reactions)
+                db.commit()
+
+            # Update offline message if it exists there
+            offline_msg = db.query(OfflineMessage).filter_by(msg_id=msg_id).first()
+            if offline_msg:
+                reactions = json.loads(offline_msg.reactions) if offline_msg.reactions else {}
+                reactions[sender_email] = emoji
+                offline_msg.reactions = json.dumps(reactions)
+                db.commit()
+
+            print(f"[DB] ✅ Reaction updated on {msg_id}")
+
+            # Send to recipient if online
+            from src.main import active_connections
+            if recipient_email in active_connections:
+                await active_connections[recipient_email].send_text(json.dumps({
+                    "type": "reaction",
+                    "msg_id": msg_id,
+                    "from": sender_email,
+                    "to": recipient_email,
+                    "emoji": emoji
+                }))
+                print(f"[WS DELIVERY] ✅ Reaction sent to {recipient_email}")
+
+        except Exception as e:
+            print(f"[DB ERROR] Failed to store reaction → {e}")
+            traceback.print_exc()
+
     elif msg_type in ["call_offer", "call_answer", "ice_candidate", "call_reject", "call_end", "call_ring"]:
         recipient_email = data.get("to")
         if not recipient_email:

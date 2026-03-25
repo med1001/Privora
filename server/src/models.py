@@ -8,17 +8,20 @@ from src.db import Base
 class Message(Base):
     __tablename__ = 'message_history'
     id = Column(Integer, primary_key=True)
+    msg_id = Column(String, index=True)
     sender = Column(String)
-    sender_display_name = Column(String)  # <-- new column for sender's display name
+    sender_display_name = Column(String)
     recipient = Column(String)
     message = Column(String)
-    timestamp = Column(DateTime(timezone=True), server_default=func.now())
+    reactions = Column(String, default="{}")
+    timestamp = Column(DateTime(timezone=True), server_default=func.now())      
 
 class OfflineMessage(Base):
     __tablename__ = 'offline_messages'
     id = Column(Integer, primary_key=True)
+    msg_id = Column(String, index=True)
     sender = Column(String)
-    sender_display_name = Column(String)  # <-- new column here too
+    sender_display_name = Column(String)
     recipient = Column(String)
     message = Column(String)
-    timestamp = Column(DateTime(timezone=True), server_default=func.now())
+    reactions = Column(String, default="{}")
