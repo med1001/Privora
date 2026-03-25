@@ -70,7 +70,7 @@ async def handle_incoming_message(sender_email, websocket, data):
                     "to": msg.recipient,
                     "message": msg.message,
                     "reactions": json.loads(msg.reactions) if msg.reactions else {},
-                    "timestamp": msg.timestamp.isoformat() if msg.timestamp else None
+                      "timestamp": msg.timestamp.isoformat() if hasattr(msg, "timestamp") and msg.timestamp else None
                 }))
                 db.delete(msg)
             db.commit()
