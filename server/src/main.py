@@ -5,7 +5,9 @@
 import os
 import json
 from dotenv import load_dotenv
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends, Header, HTTPException, Query
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends, Header, HTTPException, Query, File, UploadFile
+from fastapi.staticfiles import StaticFiles
+import uuid, shutil, os
 from fastapi.middleware.cors import CORSMiddleware
 from firebase_admin import auth as firebase_auth, credentials, initialize_app
 from src.db import engine
@@ -29,6 +31,9 @@ Base.metadata.create_all(bind=engine)
 
 # ---------- FastAPI App ----------
 app = FastAPI()
+
+os.makedirs("uploads", exist_ok=True)
+app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 
 ALLOWED_ORIGIN = os.getenv("ALLOWED_ORIGIN", "http://localhost:3000")
 app.add_middleware(
@@ -167,3 +172,24 @@ async def websocket_endpoint(websocket: WebSocket):
                     del pending_calls[to_user]
 
             await broadcast_presence(user_email, "offline")
+
+
+@app.post("/api/upload")
+async def upload_file(file: UploadFile = File(...)):
+    # 10 MB limit check can be done by validating file size, but UploadFile handles streaming gracefully.
+    try:
+        file_extension = os.path.splitext(file.filename)[1]
+        unique_filename = f"{uuid.uuid4().hex}{file_extension}"
+        file_path = os.path.join("uploads", unique_filename)
+        
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+            
+        file_size = os.path.getsize(file_path)
+        if file_size > 10 * 1024 * 1024:
+            os.remove(file_path)
+            return {"error": "File too large. Maximum size is 10MB."}
+
+        return {"url": f"/uploads/{unique_filename}", "filename": file.filename, "type": file.content_type}
+    except Exception as e:
+        return {"error": str(e)}

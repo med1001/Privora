@@ -3,3 +3,5 @@ uvicorn[standard]
 SQLAlchemy
 python-dotenv
 firebase-admin
+python-multipart
+python-multipart
