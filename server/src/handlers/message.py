@@ -76,10 +76,14 @@ async def handle_incoming_message(sender_email, websocket, data):
             db.commit()
             print(f"[WS OFFLINE DELIVERY] ✅ Completed → {sender_email}")
 
-            # ✅ Retrieve full history with fromDisplayName
-            history = db.query(Message).filter(
+            # ✅ Retrieve history with fromDisplayName, limiting to last 25.
+            # We want the newest 25, so we order descending, limit, then reverse back to chronological.
+            history_query = db.query(Message).filter(
                 (Message.sender == sender_email) | (Message.recipient == sender_email)
-            ).order_by(Message.timestamp.asc()).all()
+            ).order_by(Message.timestamp.desc()).limit(25).all()
+            
+            # Reverse to make it ascending (oldest to newest) for the frontend
+            history = list(reversed(history_query))
 
             history_payload = [{
                 "msg_id": msg.msg_id,
