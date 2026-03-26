@@ -174,22 +174,37 @@ async def websocket_endpoint(websocket: WebSocket):
             await broadcast_presence(user_email, "offline")
 
 
+MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB limit
+ALLOWED_EXTENSIONS = {'.png', '.jpg', '.jpeg', '.gif', '.pdf', '.doc', '.docx', '.txt', '.mp4', '.mp3', '.webm', '.csv'}
+
 @app.post("/api/upload")
 async def upload_file(file: UploadFile = File(...)):
-    # 10 MB limit check can be done by validating file size, but UploadFile handles streaming gracefully.
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="No file provided.")
+    
     try:
-        file_extension = os.path.splitext(file.filename)[1]
+        file_extension = os.path.splitext(file.filename)[1].lower()
+        if file_extension not in ALLOWED_EXTENSIONS:
+            raise HTTPException(status_code=415, detail=f"Format {file_extension} not allowed.")
+
         unique_filename = f"{uuid.uuid4().hex}{file_extension}"
         file_path = os.path.join("uploads", unique_filename)
-        
+
+        file_size = 0
         with open(file_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
-            
-        file_size = os.path.getsize(file_path)
-        if file_size > 10 * 1024 * 1024:
-            os.remove(file_path)
-            return {"error": "File too large. Maximum size is 10MB."}
+            while True:
+                chunk = await file.read(1024 * 1024) # 1MB memory chunks
+                if not chunk:
+                    break
+                file_size += len(chunk)
+                if file_size > MAX_FILE_SIZE:
+                    buffer.close()
+                    os.remove(file_path) # Clean up partial file immediately
+                    raise HTTPException(status_code=413, detail="File too large. Maximum is 10MB.")
+                buffer.write(chunk)
 
         return {"url": f"/uploads/{unique_filename}", "filename": file.filename, "type": file.content_type}
+    except HTTPException:
+        raise
     except Exception as e:
-        return {"error": str(e)}
+        raise HTTPException(status_code=500, detail=str(e))
