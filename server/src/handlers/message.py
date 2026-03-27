@@ -135,21 +135,22 @@ async def handle_incoming_message(sender_email, websocket, data):
             from src.main import pending_calls, active_connections
             if sender_email in pending_calls:
                 offer_info = pending_calls.pop(sender_email)
-                await websocket.send_text(json.dumps(offer_info["data"]))
-                print(f"[WS SIGNALING] 🎉 Delivered queued call offer to {sender_email}")
-                
-                # Notify the caller that they are now online and it's ringing
-                caller = offer_info["from"]
-                if caller in active_connections:
-                    await active_connections[caller].send_text(json.dumps({
-                        "type": "call_ring",
-                        "from": sender_email,
-                        "to": caller
-                    }))
+                  import time
+                  if time.time() - offer_info.get("timestamp", 0) > 45:
+                      print(f"[WS SIGNALING] 🛑 Discarded expired call offer to {sender_email}")
+                      pass
+                  else:
+                      await websocket.send_text(json.dumps(offer_info["data"]))
+                      print(f"[WS SIGNALING] 🎉 Delivered queued call offer to {sender_email}")
 
-        except Exception as e:
-            print(f"[WS ERROR] History retrieval → {e}")
-            traceback.print_exc()
+                      # Notify the caller that they are now online and it's ringing
+                      caller = offer_info["from"]
+                      if caller in active_connections:
+                          await active_connections[caller].send_text(json.dumps({
+                              "type": "call_ring",
+                              "from": sender_email,
+                              "to": caller
+                          }))
 
     elif msg_type == "reaction":
         msg_id = data.get("msg_id")
@@ -220,7 +221,8 @@ async def handle_incoming_message(sender_email, websocket, data):
                 # Queue the call offer for when they log in 
                 forward_data = data.copy()
                 forward_data["from"] = sender_email
-                pending_calls[recipient_email] = {"from": sender_email, "data": forward_data}
+                import time
+                  pending_calls[recipient_email] = {"from": sender_email, "data": forward_data, "timestamp": time.time()}
                 
                 # Tell the caller they are offline but keep ringing
                 await websocket.send_text(json.dumps({

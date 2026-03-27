@@ -160,6 +160,28 @@ async def websocket_endpoint(websocket: WebSocket):
             for to_user, offer in list(pending_calls.items()):
                 if offer["from"] == user_email:
                     del pending_calls[to_user]
+                    # Also notify the callee that the call dropped so their screen stops ringing
+                    if to_user in active_connections:
+                        try:
+                            import asyncio, json
+                            asyncio.create_task(active_connections[to_user].send_text(json.dumps({
+                                "type": "call_end",
+                                "from": user_email,
+                                "to": to_user
+                            })))
+                        except:
+                            pass
+                    # Also notify the callee that the call dropped so their screen stops ringing
+                    if to_user in active_connections:
+                        try:
+                            import asyncio, json
+                            asyncio.create_task(active_connections[to_user].send_text(json.dumps({
+                                "type": "call_end",
+                                "from": user_email,
+                                "to": to_user
+                            })))
+                        except:
+                            pass
                     
             await broadcast_presence(user_email, "offline")
     except Exception as e:
