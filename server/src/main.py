@@ -4,6 +4,8 @@
 
 import os
 import json
+import time
+import uuid
 from dotenv import load_dotenv
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends, Header, HTTPException, Query, File, UploadFile
 from fastapi.staticfiles import StaticFiles
@@ -44,8 +46,50 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-active_connections = {}  # user_email -> websocket
-pending_calls = {}       # recipient_email -> {"from": caller_email, "data": offer_data}
+active_connections = {}  # user_email -> {connection_id: websocket}
+pending_calls = {}       # call_id -> {call_id, from, to, data, created_at, expires_at}
+call_sessions = {}       # call_id -> {call_id, caller, callee, status, created_at, expires_at, ...}
+
+
+def prune_expired_call_state():
+    now = time.time()
+
+    for call_id, offer in list(pending_calls.items()):
+        if offer.get("expires_at", 0) <= now:
+            pending_calls.pop(call_id, None)
+            session = call_sessions.get(call_id)
+            if session and session.get("status") in {"offering", "queued", "ringing"}:
+                call_sessions.pop(call_id, None)
+
+    for call_id, session in list(call_sessions.items()):
+        expires_at = session.get("expires_at")
+        if expires_at and expires_at <= now and session.get("status") in {"offering", "queued", "ringing"}:
+            call_sessions.pop(call_id, None)
+            pending_calls.pop(call_id, None)
+
+
+def is_user_online(user_email: str) -> bool:
+    return bool(active_connections.get(user_email))
+
+
+async def send_to_user(user_email: str, payload: dict):
+    user_connections = active_connections.get(user_email, {})
+    stale_connection_ids = []
+
+    for connection_id, ws in list(user_connections.items()):
+        try:
+            await ws.send_text(json.dumps(payload))
+        except Exception as e:
+            print(f"[WS SEND ERROR] Failed to send to {user_email}/{connection_id}: {e}")
+            stale_connection_ids.append(connection_id)
+
+    for connection_id in stale_connection_ids:
+        user_connections.pop(connection_id, None)
+
+    if not user_connections:
+        active_connections.pop(user_email, None)
+
+
 async def broadcast_presence(user_email: str, status: str):
     """Notify all connected clients that a given user went online/offline."""
     if not active_connections:
@@ -57,11 +101,16 @@ async def broadcast_presence(user_email: str, status: str):
         "status": status,
     })
 
-    for ws in list(active_connections.values()):
-        try:
-            await ws.send_text(payload)
-        except Exception as e:
-            print(f"[WS PRESENCE ERROR] Failed to send to a client: {e}")
+    for other_user, connections in list(active_connections.items()):
+        for connection_id, ws in list(connections.items()):
+            try:
+                await ws.send_text(payload)
+            except Exception as e:
+                print(f"[WS PRESENCE ERROR] Failed to send to {other_user}/{connection_id}: {e}")
+                connections.pop(connection_id, None)
+
+        if not connections:
+            active_connections.pop(other_user, None)
 
 # ---------- Token Verification ----------
 def verify_token(token: str):
@@ -114,11 +163,13 @@ async def websocket_endpoint(websocket: WebSocket):
     print("[WS] Connection opened")
 
     user_email = None
+    connection_id = uuid.uuid4().hex
 
     try:
         while True:
             data = await websocket.receive_text()
             data_json = json.loads(data)
+            prune_expired_call_state()
 
             # --- Ping/Pong Keep-Alive ---
             if data_json.get("type") == "ping":
@@ -136,14 +187,18 @@ async def websocket_endpoint(websocket: WebSocket):
                     return
 
                 print(f"[WS LOGIN SUCCESS] {user_email}")
-                active_connections[user_email] = websocket
+                had_existing_connections = is_user_online(user_email)
+                active_connections.setdefault(user_email, {})[connection_id] = websocket
 
                 # Notify all clients that this user is now online
-                await broadcast_presence(user_email, "online")
+                if not had_existing_connections:
+                    await broadcast_presence(user_email, "online")
 
                 # Send the new client a snapshot of who is currently online
-                for other_email, other_ws in active_connections.items():
+                for other_email, other_connections in active_connections.items():
                     if other_email == user_email:
+                        continue
+                    if not other_connections:
                         continue
                     try:
                         await websocket.send_text(json.dumps({
@@ -160,24 +215,61 @@ async def websocket_endpoint(websocket: WebSocket):
     except WebSocketDisconnect:
         print(f"[WS DISCONNECTED] {user_email if user_email else 'Unknown user'}")
         if user_email:
-            active_connections.pop(user_email, None)
-            
-            # Clean up pending calls if caller abruptly disconnects
-            for to_user, offer in list(pending_calls.items()):
-                if offer["from"] == user_email:
-                    del pending_calls[to_user]
-                    
-            await broadcast_presence(user_email, "offline")
+            user_connections = active_connections.get(user_email, {})
+            user_connections.pop(connection_id, None)
+            if not user_connections:
+                active_connections.pop(user_email, None)
+
+                affected_call_ids = []
+                for call_id, session in list(call_sessions.items()):
+                    if session.get("caller") != user_email and session.get("callee") != user_email:
+                        continue
+
+                    counterpart = session.get("callee") if session.get("caller") == user_email else session.get("caller")
+                    affected_call_ids.append(call_id)
+                    if counterpart and is_user_online(counterpart):
+                        await send_to_user(counterpart, {
+                            "type": "call_end",
+                            "from": user_email,
+                            "to": counterpart,
+                            "callId": call_id,
+                            "reason": "peer_disconnected",
+                        })
+
+                for call_id in affected_call_ids:
+                    pending_calls.pop(call_id, None)
+                    call_sessions.pop(call_id, None)
+
+                await broadcast_presence(user_email, "offline")
     except Exception as e:
         print(f"[WS ERROR] {e}")
         if user_email:
-            active_connections.pop(user_email, None)
-            
-            for to_user, offer in list(pending_calls.items()):
-                if offer["from"] == user_email:
-                    del pending_calls[to_user]
+            user_connections = active_connections.get(user_email, {})
+            user_connections.pop(connection_id, None)
+            if not user_connections:
+                active_connections.pop(user_email, None)
 
-            await broadcast_presence(user_email, "offline")
+                affected_call_ids = []
+                for call_id, session in list(call_sessions.items()):
+                    if session.get("caller") != user_email and session.get("callee") != user_email:
+                        continue
+
+                    counterpart = session.get("callee") if session.get("caller") == user_email else session.get("caller")
+                    affected_call_ids.append(call_id)
+                    if counterpart and is_user_online(counterpart):
+                        await send_to_user(counterpart, {
+                            "type": "call_end",
+                            "from": user_email,
+                            "to": counterpart,
+                            "callId": call_id,
+                            "reason": "peer_disconnected",
+                        })
+
+                for call_id in affected_call_ids:
+                    pending_calls.pop(call_id, None)
+                    call_sessions.pop(call_id, None)
+
+                await broadcast_presence(user_email, "offline")
 
 
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB limit
