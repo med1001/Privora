@@ -120,6 +120,12 @@ async def websocket_endpoint(websocket: WebSocket):
             data = await websocket.receive_text()
             data_json = json.loads(data)
 
+            # --- Ping/Pong Keep-Alive ---
+            if data_json.get("type") == "ping":
+                print(f"[WS PING] Keep-alive received from {user_email or 'unauthenticated_user'}")
+                await websocket.send_text(json.dumps({"type": "pong"}))
+                continue
+
             if data_json.get("type") == "login":
                 token = data_json.get("token")
                 uid, email = verify_token(token)
