@@ -21,13 +21,14 @@ def _remove_pending_call(call_id: str):
 
 
 def _close_call_session(call_id: str, final_status: str):
-    from src.main import call_sessions
+    from src.main import call_sessions, clear_active_call
 
     session = call_sessions.get(call_id)
     if session:
         session["status"] = final_status
         session["ended_at"] = time.time()
 
+    clear_active_call(call_id)
     _remove_pending_call(call_id)
     call_sessions.pop(call_id, None)
 
@@ -165,7 +166,7 @@ async def handle_incoming_message(sender_email, websocket, data):
                     }))
                     print(f"[WS CONTACTS] ✅ Sent contacts ({len(contacts_payload)} users)")
 
-                from src.main import pending_calls, call_sessions, is_user_online, send_to_user
+                from src.main import pending_calls, call_sessions, is_user_online, is_user_busy, send_to_user
                 pending_for_user = []
                 for call_id, offer_info in list(pending_calls.items()):
                     if offer_info.get("to") != sender_email:
@@ -179,12 +180,28 @@ async def handle_incoming_message(sender_email, websocket, data):
                     if not session:
                         continue
 
+                    caller = offer_info["from"]
+                    if is_user_busy(sender_email, excluding_call_id=call_id):
+                        if is_user_online(caller):
+                            await send_to_user(caller, {
+                                "type": "call_reject",
+                                "from": sender_email,
+                                "to": caller,
+                                "callId": call_id,
+                                "reason": "busy",
+                            })
+                        _close_call_session(call_id, "rejected")
+                        continue
+
+                    if is_user_busy(caller, excluding_call_id=call_id):
+                        _close_call_session(call_id, "cancelled")
+                        continue
+
                     await websocket.send_text(json.dumps(offer_info["data"]))
                     session["status"] = "ringing"
                     session["ringing_at"] = time.time()
                     print(f"[WS SIGNALING] 🎉 Delivered queued call offer to {sender_email} (callId={call_id})")
 
-                    caller = offer_info["from"]
                     if is_user_online(caller):
                         await send_to_user(caller, {
                             "type": "call_ring",
@@ -247,11 +264,33 @@ async def handle_incoming_message(sender_email, websocket, data):
                 print(f"[WS ERROR] Missing 'callId' for type {msg_type}")
                 return
 
-            from src.main import call_sessions, pending_calls, is_user_online, send_to_user
+            from src.main import call_sessions, pending_calls, is_user_online, is_user_busy, mark_call_active, send_to_user
 
             if msg_type == "call_offer":
                 if call_id in call_sessions:
                     print(f"[WS SIGNALING] Duplicate call_offer ignored for callId={call_id}")
+                    return
+
+                if is_user_busy(sender_email):
+                    await websocket.send_text(json.dumps({
+                        "type": "call_reject",
+                        "from": recipient_email,
+                        "to": sender_email,
+                        "callId": call_id,
+                        "reason": "busy",
+                    }))
+                    print(f"[WS SIGNALING] Caller {sender_email} already in active call. Rejected callId={call_id}")
+                    return
+
+                if is_user_busy(recipient_email):
+                    await websocket.send_text(json.dumps({
+                        "type": "call_reject",
+                        "from": recipient_email,
+                        "to": sender_email,
+                        "callId": call_id,
+                        "reason": "busy",
+                    }))
+                    print(f"[WS SIGNALING] Callee {recipient_email} busy. Rejected callId={call_id}")
                     return
 
                 forward_data = data.copy()
@@ -312,9 +351,22 @@ async def handle_incoming_message(sender_email, websocket, data):
                 if session.get("callee") != sender_email or session.get("caller") != recipient_email:
                     print(f"[WS SIGNALING] Ignoring invalid call_answer direction for callId={call_id}")
                     return
+
+                if is_user_busy(sender_email, excluding_call_id=call_id) or is_user_busy(recipient_email, excluding_call_id=call_id):
+                    await send_to_user(sender_email, {
+                        "type": "call_end",
+                        "from": recipient_email,
+                        "to": sender_email,
+                        "callId": call_id,
+                        "reason": "busy_conflict",
+                    })
+                    _close_call_session(call_id, "cancelled")
+                    return
+
                 session["status"] = "connected"
                 session["answered_at"] = time.time()
                 session["expires_at"] = None
+                mark_call_active(call_id, sender_email, recipient_email)
                 _remove_pending_call(call_id)
             elif msg_type == "call_reject":
                 _close_call_session(call_id, "rejected")
