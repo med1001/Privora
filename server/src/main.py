@@ -2,14 +2,16 @@
 # Base.metadata.drop_all(bind=engine)
 # Base.metadata.create_all(bind=engine)
 
-import os
+import base64
+import hashlib
+import hmac
 import json
+import os
 import time
 import uuid
 from dotenv import load_dotenv
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends, Header, HTTPException, Query, File, UploadFile
 from fastapi.staticfiles import StaticFiles
-import uuid, shutil, os
 from fastapi.middleware.cors import CORSMiddleware
 from firebase_admin import auth as firebase_auth, credentials, initialize_app
 from src.db import engine
@@ -49,6 +51,73 @@ app.add_middleware(
 active_connections = {}  # user_email -> {connection_id: websocket}
 pending_calls = {}       # call_id -> {call_id, from, to, data, created_at, expires_at}
 call_sessions = {}       # call_id -> {call_id, caller, callee, status, created_at, expires_at, ...}
+active_call_by_user = {}  # user_email -> call_id
+
+
+def _parse_csv_env(env_name: str, default_value: str = ""):
+    raw_value = os.getenv(env_name, default_value)
+    return [value.strip() for value in raw_value.split(",") if value.strip()]
+
+
+def generate_turn_credentials(shared_secret: str, ttl_seconds: int):
+    expiry = int(time.time()) + ttl_seconds
+    username = str(expiry)
+    digest = hmac.new(shared_secret.encode("utf-8"), username.encode("utf-8"), hashlib.sha1).digest()
+    credential = base64.b64encode(digest).decode("utf-8")
+    return username, credential
+
+
+def build_rtc_config():
+    stun_urls = _parse_csv_env("STUN_SERVER_URLS", "stun:stun.l.google.com:19302,stun:stun1.l.google.com:19302")
+    turn_urls = _parse_csv_env("TURN_SERVER_URLS")
+    ice_transport_policy = os.getenv("RTC_ICE_TRANSPORT_POLICY", "all")
+
+    ice_servers = []
+    if stun_urls:
+        ice_servers.append({"urls": stun_urls if len(stun_urls) > 1 else stun_urls[0]})
+
+    if turn_urls:
+        turn_shared_secret = os.getenv("TURN_SHARED_SECRET", "").strip()
+        turn_ttl_seconds = int(os.getenv("TURN_TTL_SECONDS", "3600"))
+        turn_username = os.getenv("TURN_USERNAME", "").strip()
+        turn_credential = os.getenv("TURN_CREDENTIAL", "").strip()
+
+        if turn_shared_secret:
+            turn_username, turn_credential = generate_turn_credentials(turn_shared_secret, turn_ttl_seconds)
+
+        turn_server = {"urls": turn_urls if len(turn_urls) > 1 else turn_urls[0]}
+        if turn_username and turn_credential:
+            turn_server["username"] = turn_username
+            turn_server["credential"] = turn_credential
+
+        ice_servers.append(turn_server)
+
+    return {
+        "iceServers": ice_servers,
+        "iceTransportPolicy": ice_transport_policy,
+        "ttlSeconds": int(os.getenv("TURN_TTL_SECONDS", "3600")),
+    }
+
+
+def get_active_call_id(user_email: str):
+    return active_call_by_user.get(user_email)
+
+
+def is_user_busy(user_email: str, excluding_call_id: str | None = None) -> bool:
+    active_call_id = get_active_call_id(user_email)
+    return bool(active_call_id and active_call_id != excluding_call_id)
+
+
+def mark_call_active(call_id: str, *participants: str):
+    for participant in participants:
+        if participant:
+            active_call_by_user[participant] = call_id
+
+
+def clear_active_call(call_id: str):
+    for user_email, active_call_id in list(active_call_by_user.items()):
+        if active_call_id == call_id:
+            active_call_by_user.pop(user_email, None)
 
 
 def prune_expired_call_state():
@@ -59,11 +128,13 @@ def prune_expired_call_state():
             pending_calls.pop(call_id, None)
             session = call_sessions.get(call_id)
             if session and session.get("status") in {"offering", "queued", "ringing"}:
+                clear_active_call(call_id)
                 call_sessions.pop(call_id, None)
 
     for call_id, session in list(call_sessions.items()):
         expires_at = session.get("expires_at")
         if expires_at and expires_at <= now and session.get("status") in {"offering", "queued", "ringing"}:
+            clear_active_call(call_id)
             call_sessions.pop(call_id, None)
             pending_calls.pop(call_id, None)
 
@@ -156,6 +227,11 @@ def websocket_test(user_email: str = Depends(get_current_user)):
         "email": user_email
     }
 
+
+@app.get("/api/rtc-config")
+def rtc_config(user_email: str = Depends(get_current_user)):
+    return build_rtc_config()
+
 @app.websocket("/ws")
 @app.websocket("/ws/")
 async def websocket_endpoint(websocket: WebSocket):
@@ -237,6 +313,7 @@ async def websocket_endpoint(websocket: WebSocket):
                         })
 
                 for call_id in affected_call_ids:
+                    clear_active_call(call_id)
                     pending_calls.pop(call_id, None)
                     call_sessions.pop(call_id, None)
 
@@ -266,6 +343,7 @@ async def websocket_endpoint(websocket: WebSocket):
                         })
 
                 for call_id in affected_call_ids:
+                    clear_active_call(call_id)
                     pending_calls.pop(call_id, None)
                     call_sessions.pop(call_id, None)
 
