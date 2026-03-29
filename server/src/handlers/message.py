@@ -6,7 +6,7 @@ import json
 import traceback
 
 
-CALL_SIGNAL_TYPES = ["call_offer", "call_answer", "ice_candidate", "call_reject", "call_end", "call_ring"]
+CALL_SIGNAL_TYPES = ["call_offer", "call_answer", "ice_candidate", "call_reject", "call_end", "call_ring", "call_accepting", "call_connected"]
 CALL_SETUP_TTL_SECONDS = 45
 
 
@@ -347,6 +347,12 @@ async def handle_incoming_message(sender_email, websocket, data):
                     return
                 session["status"] = "ringing"
                 session["ringing_at"] = time.time()
+            elif msg_type == "call_accepting":
+                if session.get("callee") != sender_email or session.get("caller") != recipient_email:
+                    print(f"[WS SIGNALING] Ignoring invalid call_accepting direction for callId={call_id}")
+                    return
+                session["status"] = "accepting"
+                session["accepting_at"] = time.time()
             elif msg_type == "call_answer":
                 if session.get("callee") != sender_email or session.get("caller") != recipient_email:
                     print(f"[WS SIGNALING] Ignoring invalid call_answer direction for callId={call_id}")
@@ -365,6 +371,15 @@ async def handle_incoming_message(sender_email, websocket, data):
 
                 session["status"] = "connected"
                 session["answered_at"] = time.time()
+                session["expires_at"] = None
+                mark_call_active(call_id, sender_email, recipient_email)
+                _remove_pending_call(call_id)
+            elif msg_type == "call_connected":
+                if not _is_valid_participant(session, sender_email, recipient_email):
+                    print(f"[WS SIGNALING] Ignoring invalid call_connected direction for callId={call_id}")
+                    return
+                session["status"] = "connected"
+                session["connected_at"] = time.time()
                 session["expires_at"] = None
                 mark_call_active(call_id, sender_email, recipient_email)
                 _remove_pending_call(call_id)
