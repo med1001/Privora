@@ -166,7 +166,7 @@ async def handle_incoming_message(sender_email, websocket, data):
                     }))
                     print(f"[WS CONTACTS] ✅ Sent contacts ({len(contacts_payload)} users)")
 
-                from src.main import pending_calls, call_sessions, is_user_online, is_user_busy, send_to_user
+                from src.main import pending_calls, call_sessions, is_user_online, is_user_busy, send_signaling_to_user
                 pending_for_user = []
                 for call_id, offer_info in list(pending_calls.items()):
                     if offer_info.get("to") != sender_email:
@@ -183,7 +183,7 @@ async def handle_incoming_message(sender_email, websocket, data):
                     caller = offer_info["from"]
                     if is_user_busy(sender_email, excluding_call_id=call_id):
                         if is_user_online(caller):
-                            await send_to_user(caller, {
+                            await send_signaling_to_user(caller, {
                                 "type": "call_reject",
                                 "from": sender_email,
                                 "to": caller,
@@ -203,7 +203,7 @@ async def handle_incoming_message(sender_email, websocket, data):
                     print(f"[WS SIGNALING] 🎉 Delivered queued call offer to {sender_email} (callId={call_id})")
 
                     if is_user_online(caller):
-                        await send_to_user(caller, {
+                        await send_signaling_to_user(caller, {
                             "type": "call_ring",
                             "from": sender_email,
                             "to": caller,
@@ -264,7 +264,7 @@ async def handle_incoming_message(sender_email, websocket, data):
                 print(f"[WS ERROR] Missing 'callId' for type {msg_type}")
                 return
 
-            from src.main import call_sessions, pending_calls, is_user_online, is_user_busy, mark_call_active, send_to_user
+            from src.main import call_sessions, pending_calls, is_user_online, is_user_busy, mark_call_active, send_signaling_to_user
 
             if msg_type == "call_offer":
                 if call_id in call_sessions:
@@ -309,7 +309,7 @@ async def handle_incoming_message(sender_email, websocket, data):
                 }
 
                 if is_user_online(recipient_email):
-                    await send_to_user(recipient_email, forward_data)
+                    await send_signaling_to_user(recipient_email, forward_data)
                 else:
                     call_sessions[call_id]["status"] = "queued"
                     pending_calls[call_id] = {
@@ -359,7 +359,7 @@ async def handle_incoming_message(sender_email, websocket, data):
                     return
 
                 if is_user_busy(sender_email, excluding_call_id=call_id) or is_user_busy(recipient_email, excluding_call_id=call_id):
-                    await send_to_user(sender_email, {
+                    await send_signaling_to_user(sender_email, {
                         "type": "call_end",
                         "from": recipient_email,
                         "to": sender_email,
@@ -396,7 +396,7 @@ async def handle_incoming_message(sender_email, websocket, data):
                 forward_data = data.copy()
                 forward_data["from"] = sender_email
                 forward_data["callId"] = call_id
-                await send_to_user(recipient_email, forward_data)
+                await send_signaling_to_user(recipient_email, forward_data)
                 print(f"[WS SIGNALING] ✅ Forwarded {msg_type} from {sender_email} to {recipient_email} (callId={call_id})")
             else:
                 if msg_type in ["call_reject", "call_end"]:
