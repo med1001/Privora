@@ -43,9 +43,13 @@ app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 _origins_raw = os.getenv("ALLOWED_ORIGINS", "").strip() or os.getenv("ALLOWED_ORIGIN", "").strip()
 ALLOWED_ORIGINS = [
     o.strip()
-    for o in (_origins_raw or "http://localhost:3000,http://127.0.0.1:3001,http://localhost:3001").split(",")
+    for o in (_origins_raw or "http://localhost:3000,http://127.0.0.1:3000,http://127.0.0.1:3001,http://localhost:3001").split(",")
     if o.strip()
 ]
+# Same SPA on "localhost" vs "127.0.0.1" is a different browser origin — allow both for local Docker/Desktop.
+for _local in ("http://localhost:3000", "http://127.0.0.1:3000"):
+    if _local not in ALLOWED_ORIGINS:
+        ALLOWED_ORIGINS.append(_local)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
