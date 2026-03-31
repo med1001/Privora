@@ -59,6 +59,7 @@ app.add_middleware(
 )
 
 active_connections = {}  # user_email -> {connection_id: websocket}
+primary_signal_connection = {}  # user_email -> connection_id
 pending_calls = {}       # call_id -> {call_id, from, to, data, created_at, expires_at}
 call_sessions = {}       # call_id -> {call_id, caller, callee, status, created_at, expires_at, ...}
 active_call_by_user = {}  # user_email -> call_id
@@ -190,6 +191,28 @@ def is_user_online(user_email: str) -> bool:
     return bool(active_connections.get(user_email))
 
 
+def _set_primary_signal_connection(user_email: str, connection_id: str):
+    user_connections = active_connections.get(user_email, {})
+    if connection_id in user_connections:
+        primary_signal_connection[user_email] = connection_id
+
+
+def _select_signaling_connection_id(user_email: str):
+    user_connections = active_connections.get(user_email, {})
+    if not user_connections:
+        primary_signal_connection.pop(user_email, None)
+        return None
+
+    preferred_connection_id = primary_signal_connection.get(user_email)
+    if preferred_connection_id and preferred_connection_id in user_connections:
+        return preferred_connection_id
+
+    # Deterministic fallback: newest websocket connection for this user.
+    selected_connection_id = next(reversed(user_connections))
+    primary_signal_connection[user_email] = selected_connection_id
+    return selected_connection_id
+
+
 async def send_to_user(user_email: str, payload: dict):
     user_connections = active_connections.get(user_email, {})
     stale_connection_ids = []
@@ -206,6 +229,51 @@ async def send_to_user(user_email: str, payload: dict):
 
     if not user_connections:
         active_connections.pop(user_email, None)
+
+
+async def send_signaling_to_user(user_email: str, payload: dict):
+    user_connections = active_connections.get(user_email, {})
+    if not user_connections:
+        primary_signal_connection.pop(user_email, None)
+        return
+
+    selected_connection_id = _select_signaling_connection_id(user_email)
+    if not selected_connection_id:
+        return
+
+    ws = user_connections.get(selected_connection_id)
+    if not ws:
+        primary_signal_connection.pop(user_email, None)
+        return
+
+    try:
+        await ws.send_text(json.dumps(payload))
+        return
+    except Exception as e:
+        print(f"[WS SIGNAL SEND ERROR] Failed to send to {user_email}/{selected_connection_id}: {e}")
+        user_connections.pop(selected_connection_id, None)
+        if primary_signal_connection.get(user_email) == selected_connection_id:
+            primary_signal_connection.pop(user_email, None)
+
+    # Retry once on a different active connection if available.
+    fallback_connection_id = _select_signaling_connection_id(user_email)
+    if not fallback_connection_id:
+        active_connections.pop(user_email, None)
+        return
+
+    fallback_ws = user_connections.get(fallback_connection_id)
+    if not fallback_ws:
+        return
+
+    try:
+        await fallback_ws.send_text(json.dumps(payload))
+    except Exception as e:
+        print(f"[WS SIGNAL SEND ERROR] Failed fallback to {user_email}/{fallback_connection_id}: {e}")
+        user_connections.pop(fallback_connection_id, None)
+        if primary_signal_connection.get(user_email) == fallback_connection_id:
+            primary_signal_connection.pop(user_email, None)
+        if not user_connections:
+            active_connections.pop(user_email, None)
 
 
 async def broadcast_presence(user_email: str, status: str):
@@ -312,6 +380,8 @@ async def websocket_endpoint(websocket: WebSocket):
                 print(f"[WS LOGIN SUCCESS] {user_email}")
                 had_existing_connections = is_user_online(user_email)
                 active_connections.setdefault(user_email, {})[connection_id] = websocket
+                if user_email not in primary_signal_connection:
+                    primary_signal_connection[user_email] = connection_id
 
                 # Notify all clients that this user is now online
                 if not had_existing_connections:
@@ -332,6 +402,12 @@ async def websocket_endpoint(websocket: WebSocket):
                     except Exception as e:
                         print(f"[WS PRESENCE SNAPSHOT ERROR] {e}")
 
+            if data_json.get("type") == "signal_session_claim":
+                if user_email:
+                    _set_primary_signal_connection(user_email, connection_id)
+                    print(f"[WS SIGNAL ROUTING] {user_email} claimed signaling on connection {connection_id}")
+                continue
+
             if user_email:
                 await handle_incoming_message(user_email, websocket, data_json)
 
@@ -340,8 +416,14 @@ async def websocket_endpoint(websocket: WebSocket):
         if user_email:
             user_connections = active_connections.get(user_email, {})
             user_connections.pop(connection_id, None)
+            if primary_signal_connection.get(user_email) == connection_id:
+                primary_signal_connection.pop(user_email, None)
+                replacement_connection_id = _select_signaling_connection_id(user_email)
+                if replacement_connection_id:
+                    print(f"[WS SIGNAL ROUTING] Reassigned signaling for {user_email} to {replacement_connection_id}")
             if not user_connections:
                 active_connections.pop(user_email, None)
+                primary_signal_connection.pop(user_email, None)
 
                 affected_call_ids = []
                 for call_id, session in list(call_sessions.items()):
@@ -351,7 +433,7 @@ async def websocket_endpoint(websocket: WebSocket):
                     counterpart = session.get("callee") if session.get("caller") == user_email else session.get("caller")
                     affected_call_ids.append(call_id)
                     if counterpart and is_user_online(counterpart):
-                        await send_to_user(counterpart, {
+                        await send_signaling_to_user(counterpart, {
                             "type": "call_end",
                             "from": user_email,
                             "to": counterpart,
@@ -370,8 +452,14 @@ async def websocket_endpoint(websocket: WebSocket):
         if user_email:
             user_connections = active_connections.get(user_email, {})
             user_connections.pop(connection_id, None)
+            if primary_signal_connection.get(user_email) == connection_id:
+                primary_signal_connection.pop(user_email, None)
+                replacement_connection_id = _select_signaling_connection_id(user_email)
+                if replacement_connection_id:
+                    print(f"[WS SIGNAL ROUTING] Reassigned signaling for {user_email} to {replacement_connection_id}")
             if not user_connections:
                 active_connections.pop(user_email, None)
+                primary_signal_connection.pop(user_email, None)
 
                 affected_call_ids = []
                 for call_id, session in list(call_sessions.items()):
@@ -381,7 +469,7 @@ async def websocket_endpoint(websocket: WebSocket):
                     counterpart = session.get("callee") if session.get("caller") == user_email else session.get("caller")
                     affected_call_ids.append(call_id)
                     if counterpart and is_user_online(counterpart):
-                        await send_to_user(counterpart, {
+                        await send_signaling_to_user(counterpart, {
                             "type": "call_end",
                             "from": user_email,
                             "to": counterpart,
