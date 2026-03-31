@@ -39,7 +39,17 @@ app = FastAPI()
 os.makedirs("uploads", exist_ok=True)
 app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 
-ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000,http://127.0.0.1:3001,http://localhost:3001").split(",")
+# CORS: ALLOWED_ORIGINS (CSV) or legacy ALLOWED_ORIGIN (single origin)
+_origins_raw = os.getenv("ALLOWED_ORIGINS", "").strip() or os.getenv("ALLOWED_ORIGIN", "").strip()
+ALLOWED_ORIGINS = [
+    o.strip()
+    for o in (_origins_raw or "http://localhost:3000,http://127.0.0.1:3000,http://127.0.0.1:3001,http://localhost:3001").split(",")
+    if o.strip()
+]
+# Same SPA on "localhost" vs "127.0.0.1" is a different browser origin — allow both for local Docker/Desktop.
+for _local in ("http://localhost:3000", "http://127.0.0.1:3000"):
+    if _local not in ALLOWED_ORIGINS:
+        ALLOWED_ORIGINS.append(_local)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
@@ -59,6 +69,44 @@ def _parse_csv_env(env_name: str, default_value: str = ""):
     return [value.strip() for value in raw_value.split(",") if value.strip()]
 
 
+def _resolve_stun_urls() -> list[str]:
+    """STUN_SERVER_URLS (CSV) or legacy RTC_STUN_URL (CSV). Defaults to public Google STUN."""
+    raw = os.getenv("STUN_SERVER_URLS", "").strip()
+    if raw:
+        return [u.strip() for u in raw.split(",") if u.strip()]
+    legacy = os.getenv("RTC_STUN_URL", "").strip()
+    if legacy:
+        return [u.strip() for u in legacy.split(",") if u.strip()]
+    return ["stun:stun.l.google.com:19302", "stun:stun1.l.google.com:19302"]
+
+
+def _resolve_turn_urls() -> list[str]:
+    """TURN_SERVER_URLS (CSV) or legacy RTC_TURN_URL (CSV). Must be reachable from browsers (public IP or DNS)."""
+    raw = os.getenv("TURN_SERVER_URLS", "").strip()
+    if raw:
+        return [u.strip() for u in raw.split(",") if u.strip()]
+    legacy = os.getenv("RTC_TURN_URL", "").strip()
+    if legacy:
+        return [u.strip() for u in legacy.split(",") if u.strip()]
+    return []
+
+
+def _resolve_turn_static_credentials() -> tuple[str, str]:
+    """Long-term TURN user/pass (optional if TURN_SHARED_SECRET is set for ephemeral creds)."""
+    u = (
+        os.getenv("TURN_USERNAME", "")
+        or os.getenv("RTC_TURN_USERNAME", "")
+        or ""
+    ).strip()
+    c = (
+        os.getenv("TURN_CREDENTIAL", "")
+        or os.getenv("TURN_PASSWORD", "")
+        or os.getenv("RTC_TURN_PASSWORD", "")
+        or ""
+    ).strip()
+    return u, c
+
+
 def generate_turn_credentials(shared_secret: str, ttl_seconds: int):
     expiry = int(time.time()) + ttl_seconds
     username = str(expiry)
@@ -68,8 +116,8 @@ def generate_turn_credentials(shared_secret: str, ttl_seconds: int):
 
 
 def build_rtc_config():
-    stun_urls = _parse_csv_env("STUN_SERVER_URLS", "stun:stun.l.google.com:19302,stun:stun1.l.google.com:19302")
-    turn_urls = _parse_csv_env("TURN_SERVER_URLS")
+    stun_urls = _resolve_stun_urls()
+    turn_urls = _resolve_turn_urls()
     ice_transport_policy = os.getenv("RTC_ICE_TRANSPORT_POLICY", "all")
 
     ice_servers = []
@@ -79,8 +127,7 @@ def build_rtc_config():
     if turn_urls:
         turn_shared_secret = os.getenv("TURN_SHARED_SECRET", "").strip()
         turn_ttl_seconds = int(os.getenv("TURN_TTL_SECONDS", "3600"))
-        turn_username = os.getenv("TURN_USERNAME", "").strip()
-        turn_credential = os.getenv("TURN_CREDENTIAL", "").strip()
+        turn_username, turn_credential = _resolve_turn_static_credentials()
 
         if turn_shared_secret:
             turn_username, turn_credential = generate_turn_credentials(turn_shared_secret, turn_ttl_seconds)
