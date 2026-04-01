@@ -201,6 +201,11 @@ async def handle_incoming_message(sender_email, websocket, data):
                     session["status"] = "ringing"
                     session["ringing_at"] = time.time()
                     print(f"[WS SIGNALING] 🎉 Delivered queued call offer to {sender_email} (callId={call_id})")
+                    queued_signals = offer_info.get("queued_signals", [])
+                    if queued_signals:
+                        for queued_signal in queued_signals:
+                            await websocket.send_text(json.dumps(queued_signal))
+                        print(f"[WS SIGNALING] ↪ Replayed {len(queued_signals)} queued signaling message(s) to {sender_email} (callId={call_id})")
 
                     if is_user_online(caller):
                         await send_signaling_to_user(caller, {
@@ -317,6 +322,7 @@ async def handle_incoming_message(sender_email, websocket, data):
                         "from": sender_email,
                         "to": recipient_email,
                         "data": forward_data,
+                        "queued_signals": [],
                         "created_at": now,
                         "expires_at": expires_at,
                     }
@@ -402,6 +408,19 @@ async def handle_incoming_message(sender_email, websocket, data):
                 if msg_type in ["call_reject", "call_end"]:
                     print(f"[WS SIGNALING] Remote user offline while closing callId={call_id}")
                     return
+                if msg_type == "ice_candidate":
+                    pending_offer = pending_calls.get(call_id)
+                    if pending_offer and pending_offer.get("to") == recipient_email:
+                        queued_signals = pending_offer.setdefault("queued_signals", [])
+                        queued_signal_payload = data.copy()
+                        queued_signal_payload["from"] = sender_email
+                        queued_signal_payload["callId"] = call_id
+                        queued_signals.append(queued_signal_payload)
+                        # Avoid unbounded growth if peers keep gathering while callee is offline.
+                        if len(queued_signals) > 128:
+                            del queued_signals[:len(queued_signals) - 128]
+                        print(f"[WS SIGNALING] Recipient offline; queued ICE candidate for callId={call_id}")
+                        return
                 print(f"[WS SIGNALING] Recipient offline; dropped {msg_type} for callId={call_id}")
         else:
             print(f"[WS WARNING] Unknown message type '{msg_type}' → {data}")
