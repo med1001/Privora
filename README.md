@@ -15,6 +15,8 @@
 ![GitHub pull requests](https://img.shields.io/github/issues-pr/med1001/Privora)
 ![GitHub license](https://img.shields.io/github/license/med1001/Privora)
 
+**Related repositories:** [Privora-GUI](https://github.com/med1001/Privora-GUI) (React client) · [Privora-ReverseProxy](https://github.com/med1001/Privora-ReverseProxy) (nginx) · [**Privora-Workspace**](https://github.com/med1001/Privora-Workspace) (meta repo: all submodules + local Docker in one clone)
+
 ---
 
 ##  Features
@@ -173,7 +175,10 @@ For simpler orchestration, we will consider using `docker-compose.yml`later.
 ---
 
 ## Contributing
-Feel free to contribute! Fork the repo, make your changes, and submit a pull request.
+
+See **[CONTRIBUTING.md](./CONTRIBUTING.md)** for setup and PR expectations.
+
+Feel free to contribute: fork the repo, make your changes, and submit a pull request.
 
 ---
 
