@@ -151,12 +151,15 @@ async def handle_incoming_message(sender_email, websocket, data):
                     try:
                         user_record = firebase_auth.get_user_by_email(email)
                         display_name = (user_record.display_name or "").strip()
+                        photo_url = (user_record.photo_url or "").strip() or None
                     except Exception as e:
                         print(f"[WS CONTACTS] Firebase lookup failed for {email}: {e}")
+                        photo_url = None
 
                     contacts_payload.append({
                         "userId": email,
                         "displayName": display_name or email,
+                        "photoURL": photo_url,
                     })
 
                 if contacts_payload:

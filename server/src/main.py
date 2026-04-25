@@ -10,12 +10,13 @@ import os
 import time
 import uuid
 from dotenv import load_dotenv
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends, Header, HTTPException, Query, File, UploadFile
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends, Header, HTTPException, Query, File, UploadFile, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, Field
 from firebase_admin import auth as firebase_auth, credentials, initialize_app
-from src.db import engine
-from src.models import Base
+from src.db import SessionLocal, engine
+from src.models import Base, SupportRequest
 from src.handlers.message import handle_incoming_message
 
 # ---------- Load environment ----------
@@ -63,6 +64,16 @@ primary_signal_connection = {}  # user_email -> connection_id
 pending_calls = {}       # call_id -> {call_id, from, to, data, created_at, expires_at}
 call_sessions = {}       # call_id -> {call_id, caller, callee, status, created_at, expires_at, ...}
 active_call_by_user = {}  # user_email -> call_id
+
+MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB limit
+ALLOWED_EXTENSIONS = {'.png', '.jpg', '.jpeg', '.gif', '.pdf', '.doc', '.docx', '.txt', '.mp4', '.mp3', '.webm', '.csv'}
+ALLOWED_IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".webp"}
+PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "").strip().rstrip("/")
+
+
+class SupportRequestPayload(BaseModel):
+    subject: str = Field(..., min_length=3, max_length=120)
+    message: str = Field(..., min_length=10, max_length=5000)
 
 
 def _parse_csv_env(env_name: str, default_value: str = ""):
@@ -314,6 +325,60 @@ def get_current_user(authorization: str = Header(...)):
         raise HTTPException(status_code=401, detail="Invalid token")
     return email
 
+
+def get_current_user_identity(authorization: str = Header(...)):
+    token = authorization.replace("Bearer ", "")
+    uid, email = verify_token(token)
+    if not uid or not email:
+        raise HTTPException(status_code=401, detail="Invalid token")
+    return {"uid": uid, "email": email}
+
+
+def _serialize_user_record(user_record):
+    return {
+        "userId": (user_record.email or "").strip(),
+        "displayName": (user_record.display_name or user_record.email or "").strip(),
+        "photoURL": (user_record.photo_url or "").strip() or None,
+    }
+
+
+def _save_upload_file(file: UploadFile, allowed_extensions: set[str]):
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="No file provided.")
+
+    file_extension = os.path.splitext(file.filename)[1].lower()
+    if file_extension not in allowed_extensions:
+        raise HTTPException(status_code=415, detail=f"Format {file_extension} not allowed.")
+
+    unique_filename = f"{uuid.uuid4().hex}{file_extension}"
+    file_path = os.path.join("uploads", unique_filename)
+
+    file_size = 0
+    with open(file_path, "wb") as buffer:
+        while True:
+            chunk = file.file.read(1024 * 1024)
+            if not chunk:
+                break
+            file_size += len(chunk)
+            if file_size > MAX_FILE_SIZE:
+                buffer.close()
+                os.remove(file_path)
+                raise HTTPException(status_code=413, detail="File too large. Maximum is 10MB.")
+            buffer.write(chunk)
+
+    return {
+        "stored_filename": unique_filename,
+        "original_filename": file.filename,
+        "content_type": file.content_type,
+        "url": f"/uploads/{unique_filename}",
+    }
+
+
+def _build_public_upload_url(request: Request, stored_filename: str) -> str:
+    if PUBLIC_BASE_URL:
+        return f"{PUBLIC_BASE_URL}/uploads/{stored_filename}"
+    return str(request.url_for("uploads", path=stored_filename))
+
 # ---------- Routes ----------
 
 @app.get("/search-users")
@@ -327,10 +392,7 @@ def search_users(q: str = Query(..., min_length=1), user_email: str = Depends(ge
             display_name = (user.display_name or "").strip()
             email = (user.email or "").strip()
             if query in display_name.lower():
-                matched_users.append({
-                    "userId": email,
-                    "displayName": display_name
-                })
+                matched_users.append(_serialize_user_record(user))
         page = page.get_next_page()
 
     return matched_users
@@ -346,6 +408,87 @@ def websocket_test(user_email: str = Depends(get_current_user)):
 @app.get("/api/rtc-config")
 def rtc_config(user_email: str = Depends(get_current_user)):
     return build_rtc_config()
+
+
+@app.get("/api/settings/me")
+def get_settings_profile(identity: dict = Depends(get_current_user_identity)):
+    try:
+        user_record = firebase_auth.get_user(identity["uid"])
+        return _serialize_user_record(user_record)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Could not load profile: {e}")
+
+
+@app.post("/api/settings/profile-photo")
+async def update_profile_photo(
+    request: Request,
+    file: UploadFile = File(...),
+    identity: dict = Depends(get_current_user_identity),
+):
+    if file.content_type and not file.content_type.startswith("image/"):
+        raise HTTPException(status_code=415, detail="Only image uploads are allowed for profile photos.")
+
+    try:
+        uploaded = _save_upload_file(file, ALLOWED_IMAGE_EXTENSIONS)
+        public_photo_url = _build_public_upload_url(request, uploaded["stored_filename"])
+        firebase_auth.update_user(identity["uid"], photo_url=public_photo_url)
+        updated_user = firebase_auth.get_user(identity["uid"])
+        return {
+            "message": "Profile photo updated.",
+            "user": _serialize_user_record(updated_user),
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to update profile photo: {e}")
+
+
+@app.post("/api/settings/contact")
+def submit_contact_request(
+    payload: SupportRequestPayload,
+    identity: dict = Depends(get_current_user_identity),
+):
+    db = SessionLocal()
+    try:
+        support_request = SupportRequest(
+            category="contact",
+            user_email=identity["email"],
+            subject=payload.subject.strip(),
+            message=payload.message.strip(),
+        )
+        db.add(support_request)
+        db.commit()
+        db.refresh(support_request)
+        return {"message": "Your message was sent.", "requestId": support_request.id}
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Failed to submit contact request: {e}")
+    finally:
+        db.close()
+
+
+@app.post("/api/settings/report-issue")
+def submit_issue_report(
+    payload: SupportRequestPayload,
+    identity: dict = Depends(get_current_user_identity),
+):
+    db = SessionLocal()
+    try:
+        support_request = SupportRequest(
+            category="issue",
+            user_email=identity["email"],
+            subject=payload.subject.strip(),
+            message=payload.message.strip(),
+        )
+        db.add(support_request)
+        db.commit()
+        db.refresh(support_request)
+        return {"message": "Issue report submitted.", "requestId": support_request.id}
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Failed to submit issue report: {e}")
+    finally:
+        db.close()
 
 @app.websocket("/ws")
 @app.websocket("/ws/")
@@ -484,37 +627,11 @@ async def websocket_endpoint(websocket: WebSocket):
 
                 await broadcast_presence(user_email, "offline")
 
-
-MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB limit
-ALLOWED_EXTENSIONS = {'.png', '.jpg', '.jpeg', '.gif', '.pdf', '.doc', '.docx', '.txt', '.mp4', '.mp3', '.webm', '.csv'}
-
 @app.post("/api/upload")
 async def upload_file(file: UploadFile = File(...), user_email: str = Depends(get_current_user)):
-    if not file.filename:
-        raise HTTPException(status_code=400, detail="No file provided.")
-    
     try:
-        file_extension = os.path.splitext(file.filename)[1].lower()
-        if file_extension not in ALLOWED_EXTENSIONS:
-            raise HTTPException(status_code=415, detail=f"Format {file_extension} not allowed.")
-
-        unique_filename = f"{uuid.uuid4().hex}{file_extension}"
-        file_path = os.path.join("uploads", unique_filename)
-
-        file_size = 0
-        with open(file_path, "wb") as buffer:
-            while True:
-                chunk = await file.read(1024 * 1024) # 1MB memory chunks
-                if not chunk:
-                    break
-                file_size += len(chunk)
-                if file_size > MAX_FILE_SIZE:
-                    buffer.close()
-                    os.remove(file_path) # Clean up partial file immediately
-                    raise HTTPException(status_code=413, detail="File too large. Maximum is 10MB.")
-                buffer.write(chunk)
-
-        return {"url": f"/uploads/{unique_filename}", "filename": file.filename, "type": file.content_type}
+        uploaded = _save_upload_file(file, ALLOWED_EXTENSIONS)
+        return {"url": uploaded["url"], "filename": uploaded["original_filename"], "type": uploaded["content_type"]}
     except HTTPException:
         raise
     except Exception as e:

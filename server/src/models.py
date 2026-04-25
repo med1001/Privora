@@ -1,9 +1,5 @@
-from sqlalchemy import Column, Integer, String, DateTime, create_engine, func
-from sqlalchemy.ext.declarative import declarative_base
-from datetime import datetime
+from sqlalchemy import Column, Integer, String, DateTime, Text, func
 from src.db import Base
-
-#Base = declarative_base()
 
 class Message(Base):
     __tablename__ = 'message_history'
@@ -25,3 +21,14 @@ class OfflineMessage(Base):
     recipient = Column(String)
     message = Column(String)
     reactions = Column(String, default="{}")
+
+
+class SupportRequest(Base):
+    __tablename__ = "support_requests"
+
+    id = Column(Integer, primary_key=True)
+    category = Column(String, nullable=False, index=True)
+    user_email = Column(String, nullable=False, index=True)
+    subject = Column(String, nullable=False)
+    message = Column(Text, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
