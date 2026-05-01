@@ -10,13 +10,14 @@ import os
 import time
 import uuid
 from dotenv import load_dotenv
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends, Header, HTTPException, Query, File, UploadFile
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends, Header, HTTPException, Query, File, UploadFile, Body
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from firebase_admin import auth as firebase_auth, credentials, initialize_app
 from src.db import engine
 from src.models import Base
 from src.handlers.message import handle_incoming_message
+from src import push as push_service
 
 # ---------- Load environment ----------
 load_dotenv()
@@ -346,6 +347,34 @@ def websocket_test(user_email: str = Depends(get_current_user)):
 @app.get("/api/rtc-config")
 def rtc_config(user_email: str = Depends(get_current_user)):
     return build_rtc_config()
+
+
+@app.post("/api/push/register")
+def register_push_token(
+    payload: dict = Body(...),
+    user_email: str = Depends(get_current_user),
+):
+    """Register an FCM device token so the user can receive incoming-call pushes."""
+    token = (payload.get("token") or "").strip()
+    platform = (payload.get("platform") or "android").strip().lower() or "android"
+    if not token:
+        raise HTTPException(status_code=400, detail="token is required")
+    push_service.register_token(user_email, token, platform)
+    print(f"[PUSH] Registered {platform} token for {user_email}", flush=True)
+    return {"ok": True}
+
+
+@app.post("/api/push/unregister")
+def unregister_push_token(
+    payload: dict = Body(...),
+    user_email: str = Depends(get_current_user),
+):
+    token = (payload.get("token") or "").strip()
+    if not token:
+        raise HTTPException(status_code=400, detail="token is required")
+    push_service.unregister_token(token)
+    print(f"[PUSH] Unregistered token for {user_email}", flush=True)
+    return {"ok": True}
 
 @app.websocket("/ws")
 @app.websocket("/ws/")

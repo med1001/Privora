@@ -333,6 +333,35 @@ async def handle_incoming_message(sender_email, websocket, data):
                         "callId": call_id,
                     }))
                     print(f"[WS SIGNALING] Target {recipient_email} offline. Queued call for {sender_email} (callId={call_id})")
+
+                # Always try to wake the device via FCM. We do it for online
+                # users too because the WebSocket only reaches the foreground
+                # process; a high-priority push is what makes the phone ring
+                # when the app is backgrounded or killed.
+                try:
+                    from src import push as push_service
+
+                    display_name = (
+                        data.get("fromDisplayName")
+                        or sender_email
+                        or "Unknown caller"
+                    )
+                    delivered = push_service.notify_incoming_call(
+                        to_user_email=recipient_email,
+                        from_email=sender_email,
+                        from_display_name=str(display_name),
+                        call_id=call_id,
+                    )
+                    if delivered:
+                        print(
+                            f"[PUSH] Sent incoming-call notification to {recipient_email} "
+                            f"(callId={call_id}, devices={delivered})",
+                            flush=True,
+                        )
+                except Exception as exc:  # never let push errors break call flow
+                    print(f"[PUSH ERROR] {exc}", flush=True)
+
+                if not is_user_online(recipient_email):
                     return
 
                 print(f"[WS SIGNALING] ✅ Forwarded call_offer from {sender_email} to {recipient_email} (callId={call_id})")
