@@ -1,3 +1,4 @@
+import asyncio
 import time
 from src.db import SessionLocal
 from src.models import Message, OfflineMessage
@@ -313,7 +314,9 @@ async def handle_incoming_message(sender_email, websocket, data):
                     "expires_at": expires_at,
                 }
 
-                if is_user_online(recipient_email):
+                recipient_online = is_user_online(recipient_email)
+
+                if recipient_online:
                     await send_signaling_to_user(recipient_email, forward_data)
                 else:
                     call_sessions[call_id]["status"] = "queued"
@@ -326,18 +329,15 @@ async def handle_incoming_message(sender_email, websocket, data):
                         "created_at": now,
                         "expires_at": expires_at,
                     }
-                    await websocket.send_text(json.dumps({
-                        "type": "call_ring_offline",
-                        "from": recipient_email,
-                        "to": sender_email,
-                        "callId": call_id,
-                    }))
-                    print(f"[WS SIGNALING] Target {recipient_email} offline. Queued call for {sender_email} (callId={call_id})")
 
                 # Always try to wake the device via FCM. We do it for online
                 # users too because the WebSocket only reaches the foreground
                 # process; a high-priority push is what makes the phone ring
                 # when the app is backgrounded or killed.
+                #
+                # `messaging.send` is synchronous in firebase-admin so we
+                # offload to a thread to keep the WS event loop responsive.
+                delivered = 0
                 try:
                     from src import push as push_service
 
@@ -346,7 +346,8 @@ async def handle_incoming_message(sender_email, websocket, data):
                         or sender_email
                         or "Unknown caller"
                     )
-                    delivered = push_service.notify_incoming_call(
+                    delivered = await asyncio.to_thread(
+                        push_service.notify_incoming_call,
                         to_user_email=recipient_email,
                         from_email=sender_email,
                         from_display_name=str(display_name),
@@ -361,7 +362,44 @@ async def handle_incoming_message(sender_email, websocket, data):
                 except Exception as exc:  # never let push errors break call flow
                     print(f"[PUSH ERROR] {exc}", flush=True)
 
-                if not is_user_online(recipient_email):
+                # Decide what status to surface on the caller side.
+                #   - callee online (WS): the callee will respond with
+                #     call_ring on its own; nothing extra to send here.
+                #   - callee offline AND FCM delivered: phone is ringing
+                #     remotely — tell caller "ringing" instead of
+                #     "user is offline".
+                #   - callee offline AND FCM not delivered: legacy
+                #     "user is offline" UX so the caller can decide to
+                #     leave a message or hang up.
+                if not recipient_online:
+                    if delivered > 0:
+                        # FCM accepted by Google but the device hasn't yet
+                        # rendered the heads-up - tell the caller "reaching
+                        # device" rather than "ringing" so they don't think
+                        # the callee is ignoring them. The mobile app will
+                        # POST /api/calls/{id}/ringing once the heads-up
+                        # is on screen, which then sends a real call_ring.
+                        await websocket.send_text(json.dumps({
+                            "type": "call_ring_remote",
+                            "from": recipient_email,
+                            "to": sender_email,
+                            "callId": call_id,
+                        }))
+                        print(
+                            f"[WS SIGNALING] Target {recipient_email} offline; FCM dispatched. "
+                            f"Notified caller {sender_email} as 'reaching device' (callId={call_id})"
+                        )
+                    else:
+                        await websocket.send_text(json.dumps({
+                            "type": "call_ring_offline",
+                            "from": recipient_email,
+                            "to": sender_email,
+                            "callId": call_id,
+                        }))
+                        print(
+                            f"[WS SIGNALING] Target {recipient_email} offline and no push delivered. "
+                            f"Queued call for {sender_email} (callId={call_id})"
+                        )
                     return
 
                 print(f"[WS SIGNALING] ✅ Forwarded call_offer from {sender_email} to {recipient_email} (callId={call_id})")
@@ -435,7 +473,20 @@ async def handle_incoming_message(sender_email, websocket, data):
                 print(f"[WS SIGNALING] ✅ Forwarded {msg_type} from {sender_email} to {recipient_email} (callId={call_id})")
             else:
                 if msg_type in ["call_reject", "call_end"]:
-                    print(f"[WS SIGNALING] Remote user offline while closing callId={call_id}")
+                    # The recipient's WS isn't connected, but the callee may
+                    # still have an active heads-up notification on a
+                    # backgrounded / killed device. Tell their phone to
+                    # dismiss it via FCM so the ringing stops immediately.
+                    try:
+                        from src import push as push_service
+                        await asyncio.to_thread(
+                            push_service.notify_cancel_call,
+                            to_user_email=recipient_email,
+                            call_id=call_id,
+                        )
+                    except Exception as exc:  # never break call flow
+                        print(f"[PUSH ERROR] cancel_call: {exc}", flush=True)
+                    print(f"[WS SIGNALING] Remote user offline while closing callId={call_id}; cancel push sent")
                     return
                 if msg_type == "ice_candidate":
                     pending_offer = pending_calls.get(call_id)
