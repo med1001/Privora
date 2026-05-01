@@ -376,6 +376,81 @@ def unregister_push_token(
     print(f"[PUSH] Unregistered token for {user_email}", flush=True)
     return {"ok": True}
 
+
+@app.post("/api/calls/{call_id}/ringing")
+async def ringing_call_http(call_id: str, payload: dict = Body(default={})):
+    """Mobile devices POST here from the FCM background handler the moment
+    the incoming-call heads-up is on screen.
+
+    The server forwards a real `call_ring` to the caller so their UI
+    flips from "Reaching device..." to "Calling..." (with ringtone). No
+    auth header is required: the caller-side state transition is gated
+    on a UUID `callId` already known to a live session, and the only
+    side-effect is a UI label change on the caller side.
+    """
+    session = call_sessions.get(call_id)
+    if not session:
+        return {"ok": True, "status": "unknown"}
+
+    caller = session.get("caller")
+    callee = session.get("callee")
+
+    if session.get("status") in {"ended", "rejected", "connected"}:
+        return {"ok": True, "status": session.get("status")}
+
+    session["status"] = "ringing"
+    session["ringing_at"] = time.time()
+
+    if caller and is_user_online(caller):
+        await send_signaling_to_user(caller, {
+            "type": "call_ring",
+            "from": callee,
+            "to": caller,
+            "callId": call_id,
+        })
+        print(f"[CALL HTTP] device acked ringing for callId={call_id}; notified caller {caller}", flush=True)
+    return {"ok": True, "status": "ringing"}
+
+
+@app.post("/api/calls/{call_id}/reject")
+async def reject_call_http(
+    call_id: str,
+    payload: dict = Body(default={}),
+    user_email: str = Depends(get_current_user),
+):
+    """Reject an incoming call without needing a live WebSocket.
+
+    Used by the mobile app when the user taps "Decline" on the
+    incoming-call notification while the app is killed or backgrounded.
+    Only the callee may reject the call.
+    """
+    session = call_sessions.get(call_id)
+    if not session:
+        # Already cleaned up - treat as success so the client can dismiss
+        # any local UI it might still be holding on to.
+        return {"ok": True, "status": "unknown"}
+
+    if session.get("callee") != user_email:
+        raise HTTPException(status_code=403, detail="Not the call recipient")
+
+    caller = session.get("caller")
+    reason = (payload.get("reason") or "declined").strip() or "declined"
+
+    if caller and is_user_online(caller):
+        await send_signaling_to_user(caller, {
+            "type": "call_reject",
+            "from": user_email,
+            "to": caller,
+            "callId": call_id,
+            "reason": reason,
+        })
+
+    clear_active_call(call_id)
+    pending_calls.pop(call_id, None)
+    call_sessions.pop(call_id, None)
+    print(f"[CALL HTTP] {user_email} rejected callId={call_id} (reason={reason})", flush=True)
+    return {"ok": True, "status": "rejected"}
+
 @app.websocket("/ws")
 @app.websocket("/ws/")
 async def websocket_endpoint(websocket: WebSocket):
