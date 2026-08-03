@@ -32,3 +32,13 @@ class SupportRequest(Base):
     subject = Column(String, nullable=False)
     message = Column(Text, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class AccountDeletionRequest(Base):
+    __tablename__ = "account_deletion_requests"
+
+    id = Column(Integer, primary_key=True)
+    user_email = Column(String, nullable=False, index=True)
+    details = Column(Text, nullable=True)
+    status = Column(String, nullable=False, default="pending", index=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)

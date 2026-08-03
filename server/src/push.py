@@ -76,6 +76,14 @@ class _TokenRegistry:
             tokens = self._by_user.get(user_email, {})
             return [DeviceToken(user_email, token, platform) for token, platform in tokens.items()]
 
+    def unregister_user(self, user_email: str) -> None:
+        if not user_email:
+            return
+        with self._lock:
+            tokens = self._by_user.pop(user_email, {})
+            for token in tokens:
+                self._owner_of_token.pop(token, None)
+
     def discard(self, tokens: Iterable[str]) -> None:
         for token in tokens:
             self.unregister(token)
@@ -92,6 +100,11 @@ def register_token(user_email: str, token: str, platform: str) -> None:
 def unregister_token(token: str) -> None:
     """Public removal entry point used by the HTTP API."""
     _registry.unregister(token)
+
+
+def unregister_user(user_email: str) -> None:
+    """Remove every registered device token owned by a user."""
+    _registry.unregister_user(user_email)
 
 
 def has_tokens(user_email: str) -> bool:
@@ -296,4 +309,5 @@ __all__ = [
     "registry_snapshot",
     "reset_registry",
     "unregister_token",
+    "unregister_user",
 ]

@@ -9,6 +9,7 @@ import json
 import os
 import time
 import uuid
+from urllib.parse import urlparse
 from dotenv import load_dotenv
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends, Header, HTTPException, Query, File, UploadFile, Request, Body
 from fastapi.staticfiles import StaticFiles
@@ -16,7 +17,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from firebase_admin import auth as firebase_auth, credentials, initialize_app
 from src.db import SessionLocal, engine
-from src.models import Base, SupportRequest
+from src.models import AccountDeletionRequest, Base, Message, OfflineMessage, SupportRequest
 from src.handlers.message import handle_incoming_message
 from src import push as push_service
 
@@ -75,6 +76,15 @@ PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "").strip().rstrip("/")
 class SupportRequestPayload(BaseModel):
     subject: str = Field(..., min_length=3, max_length=120)
     message: str = Field(..., min_length=10, max_length=5000)
+
+
+class AccountDeletionPayload(BaseModel):
+    confirmation: str = Field(..., min_length=6, max_length=20)
+
+
+class AccountDeletionRequestPayload(BaseModel):
+    email: str = Field(..., min_length=5, max_length=320)
+    details: str = Field(default="", max_length=2000)
 
 
 def _parse_csv_env(env_name: str, default_value: str = ""):
@@ -380,6 +390,48 @@ def _build_public_upload_url(request: Request, stored_filename: str) -> str:
         return f"{PUBLIC_BASE_URL}/uploads/{stored_filename}"
     return str(request.url_for("uploads", path=stored_filename))
 
+
+def _normalize_request_email(value: str) -> str:
+    email = value.strip().lower()
+    if "@" not in email or any(character.isspace() for character in email):
+        raise HTTPException(status_code=422, detail="Enter a valid email address.")
+    return email
+
+
+def _local_upload_name(reference: str | None) -> str | None:
+    if not reference:
+        return None
+    path = urlparse(reference).path
+    marker = "/uploads/"
+    if marker not in path:
+        return None
+    filename = path.rsplit(marker, 1)[-1]
+    if not filename or filename != os.path.basename(filename):
+        return None
+    return filename
+
+
+def _message_upload_name(message: str | None) -> str | None:
+    text = message or ""
+    for prefix in ("__system_image:", "__system_file:", "__system_voice:"):
+        if text.startswith(prefix):
+            return _local_upload_name(text[len(prefix):].split("|", 1)[0])
+    return None
+
+
+def _remove_local_upload(filename: str | None) -> None:
+    if not filename:
+        return
+    upload_root = os.path.abspath("uploads")
+    target = os.path.abspath(os.path.join(upload_root, filename))
+    if os.path.dirname(target) != upload_root:
+        return
+    try:
+        if os.path.isfile(target):
+            os.remove(target)
+    except OSError as exc:
+        print(f"[ACCOUNT DELETE] Could not remove upload {filename}: {exc}", flush=True)
+
 # ---------- Routes ----------
 
 @app.get("/search-users")
@@ -418,6 +470,90 @@ def get_settings_profile(identity: dict = Depends(get_current_user_identity)):
         return _serialize_user_record(user_record)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Could not load profile: {e}")
+
+
+@app.post("/api/account-deletion-requests", status_code=202)
+def request_account_deletion(payload: AccountDeletionRequestPayload):
+    """Accept a deletion request from the public website.
+
+    Ownership must be verified using the registered address before an operator
+    deletes anything. The response deliberately does not reveal whether an
+    account exists for the supplied address.
+    """
+    email = _normalize_request_email(payload.email)
+    db = SessionLocal()
+    try:
+        deletion_request = AccountDeletionRequest(
+            user_email=email,
+            details=payload.details.strip() or None,
+            status="pending",
+        )
+        db.add(deletion_request)
+        db.commit()
+        return {
+            "message": "Request received. We will verify ownership using the registered email address."
+        }
+    except Exception as exc:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Could not save deletion request: {exc}")
+    finally:
+        db.close()
+
+
+@app.delete("/api/settings/account")
+def delete_account(
+    payload: AccountDeletionPayload,
+    identity: dict = Depends(get_current_user_identity),
+):
+    if payload.confirmation.strip().upper() != "DELETE":
+        raise HTTPException(status_code=400, detail="Type DELETE to confirm account deletion.")
+
+    user_email = identity["email"].strip().lower()
+    db = SessionLocal()
+    upload_names: set[str] = set()
+    try:
+        user_record = firebase_auth.get_user(identity["uid"])
+        profile_upload = _local_upload_name(user_record.photo_url)
+        if profile_upload:
+            upload_names.add(profile_upload)
+
+        sent_messages = db.query(Message).filter(Message.sender == user_email).all()
+        for stored_message in sent_messages:
+            upload_name = _message_upload_name(stored_message.message)
+            if upload_name:
+                upload_names.add(upload_name)
+
+        db.query(Message).filter(
+            (Message.sender == user_email) | (Message.recipient == user_email)
+        ).delete(synchronize_session=False)
+        db.query(OfflineMessage).filter(
+            (OfflineMessage.sender == user_email) | (OfflineMessage.recipient == user_email)
+        ).delete(synchronize_session=False)
+        db.query(SupportRequest).filter(SupportRequest.user_email == user_email).delete(
+            synchronize_session=False
+        )
+        db.query(AccountDeletionRequest).filter(
+            AccountDeletionRequest.user_email == user_email
+        ).delete(synchronize_session=False)
+        db.commit()
+
+        firebase_auth.delete_user(identity["uid"])
+        push_service.unregister_user(user_email)
+        active_connections.pop(user_email, None)
+        primary_signal_connection.pop(user_email, None)
+        active_call_by_user.pop(user_email, None)
+        for filename in upload_names:
+            _remove_local_upload(filename)
+
+        return {"message": "Your Privora account and associated data were deleted."}
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception as exc:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Could not delete account: {exc}")
+    finally:
+        db.close()
 
 
 @app.post("/api/settings/profile-photo")
