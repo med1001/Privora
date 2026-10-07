@@ -59,11 +59,14 @@ class _TokenRegistry:
             self._by_user.setdefault(user_email, {})[token] = platform
             self._owner_of_token[token] = user_email
 
-    def unregister(self, token: str) -> None:
+    def unregister(self, token: str, user_email: Optional[str] = None) -> None:
         if not token:
             return
         with self._lock:
-            owner = self._owner_of_token.pop(token, None)
+            owner = self._owner_of_token.get(token)
+            if user_email is not None and owner != user_email:
+                return
+            self._owner_of_token.pop(token, None)
             if owner:
                 tokens = self._by_user.get(owner)
                 if tokens:
@@ -97,9 +100,9 @@ def register_token(user_email: str, token: str, platform: str) -> None:
     _registry.register(user_email, token, (platform or "android").lower())
 
 
-def unregister_token(token: str) -> None:
+def unregister_token(token: str, user_email: str) -> None:
     """Public removal entry point used by the HTTP API."""
-    _registry.unregister(token)
+    _registry.unregister(token, user_email)
 
 
 def unregister_user(user_email: str) -> None:
@@ -111,7 +114,7 @@ def has_tokens(user_email: str) -> bool:
     return bool(_registry.tokens_for(user_email))
 
 
-def _build_call_message(token: str, *, call_id: str, from_email: str, from_display_name: str) -> "messaging.Message":
+def _build_call_message(token: str, *, to_user_email: str, call_id: str, from_email: str, from_display_name: str) -> "messaging.Message":
     """Build a high-priority *data-only* FCM message for an incoming call.
 
     The mobile client renders a rich Notifee notification with Answer /
@@ -157,6 +160,7 @@ def _build_call_message(token: str, *, call_id: str, from_email: str, from_displ
         data={
             "type": "incoming_call",
             "callId": call_id,
+            "toUserId": to_user_email,
             "fromUserId": from_email,
             "fromDisplayName": from_display_name or from_email,
         },
@@ -192,6 +196,7 @@ def notify_incoming_call(
         try:
             message = _build_call_message(
                 target.token,
+                to_user_email=target.user_email,
                 call_id=call_id,
                 from_email=from_email,
                 from_display_name=from_display_name,
@@ -213,7 +218,7 @@ def notify_incoming_call(
     return successes
 
 
-def _build_cancel_message(token: str, *, call_id: str) -> "messaging.Message":
+def _build_cancel_message(token: str, *, to_user_email: str, call_id: str) -> "messaging.Message":
     """Build a high-priority data-only FCM message that asks the device to
     dismiss any in-flight incoming-call notification for `call_id`.
 
@@ -248,6 +253,7 @@ def _build_cancel_message(token: str, *, call_id: str) -> "messaging.Message":
         data={
             "type": "cancel_call",
             "callId": call_id,
+            "toUserId": to_user_email,
         },
         android=android_config,
         apns=apns_config,
@@ -271,7 +277,7 @@ def notify_cancel_call(*, to_user_email: str, call_id: str) -> int:
     invalid_tokens: list[str] = []
     for target in targets:
         try:
-            messaging.send(_build_cancel_message(target.token, call_id=call_id))
+            messaging.send(_build_cancel_message(target.token, to_user_email=target.user_email, call_id=call_id))
             successes += 1
         except FirebaseError as exc:
             code = getattr(exc, "code", None) or getattr(getattr(exc, "cause", None), "code", None)
