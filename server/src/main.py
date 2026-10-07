@@ -49,7 +49,7 @@ ALLOWED_ORIGINS = [
     for o in (_origins_raw or "http://localhost:3000,http://127.0.0.1:3000,http://127.0.0.1:3001,http://localhost:3001").split(",")
     if o.strip()
 ]
-# Same SPA on "localhost" vs "127.0.0.1" is a different browser origin — allow both for local Docker/Desktop.
+# Same SPA on "localhost" vs "127.0.0.1" is a different browser origin â€” allow both for local Docker/Desktop.
 for _local in ("http://localhost:3000", "http://127.0.0.1:3000"):
     if _local not in ALLOWED_ORIGINS:
         ALLOWED_ORIGINS.append(_local)
@@ -651,7 +651,7 @@ def unregister_push_token(
     token = (payload.get("token") or "").strip()
     if not token:
         raise HTTPException(status_code=400, detail="token is required")
-    push_service.unregister_token(token)
+    push_service.unregister_token(token, user_email)
     print(f"[PUSH] Unregistered token for {user_email}", flush=True)
     return {"ok": True}
 
